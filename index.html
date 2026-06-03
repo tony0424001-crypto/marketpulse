@@ -526,8 +526,7 @@ function openED(i){
   det.scrollIntoView({behavior:'smooth',block:'nearest'});
   const pc=p?`目前股價 ${p.toFixed(2)}，今日${pct>=0?'上漲':'下跌'} ${Math.abs(pct).toFixed(2)}%`:'（無即時數據）';
   callAI(`你是台灣股市ETF分析師。請分析ETF「${m.n||sym}」（${sym.replace('.TW','')}）：類型 ${m.tp||'—'}，年化殖利率 ${m.y||'—'}，費用率 ${m.e||'—'}，${pc}，前五大成分股：${(m.h||[]).slice(0,5).map(h=>h.n+'('+h.w+'%)').join('、')}。用繁體中文200字以內分析：(1)目前進場理由或風險，(2)主要壓力支撐，(3)操作建議。語氣直接，不需開場白。`)
-  .then(t=>{ab.innerHTML=`<div style="line-height:1.85">${t.replace(/
-/g,'<br>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')}</div>`;})
+  .then(t=>{ab.innerHTML=`<div style="line-height:1.85">${t.replace(/\n/g,'<br>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')}</div>`;})
   .catch(()=>{ab.innerHTML='<span style="color:var(--t3)">（需填入 Claude API Key 才能啟用 AI 分析）</span>';});
 }
 function closeED(){document.getElementById('edet').classList.remove('on');document.querySelectorAll('.ec').forEach(c=>c.classList.remove('sel'));}
@@ -597,8 +596,7 @@ function openM(symbol,nameArg){
 主要支撐位：${sup.map(r=>r.p).join('、')}
 法人籌碼：${inst.map(i=>i.n+' '+i.v).join('，')}
 請用繁體中文200字以內分析：(1)現在買壓賣壓的主要界線在哪，(2)短線操作建議，(3)最關鍵的防守點。語氣直接，不需開場白，可用**粗體**標示關鍵數字。`)
-  .then(t=>{document.getElementById('m-aib').innerHTML=`<div style="line-height:1.85">${t.replace(/
-/g,'<br>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')}</div>`;})
+  .then(t=>{document.getElementById('m-aib').innerHTML=`<div style="line-height:1.85">${t.replace(/\n/g,'<br>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')}</div>`;})
   .catch(()=>{document.getElementById('m-aib').innerHTML='<span style="color:var(--t3)">（需填入 Claude API Key 才能啟用 AI 分析）</span>';});
 
   clearInterval(clkT);updateClock();clkT=setInterval(updateClock,1000);
