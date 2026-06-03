@@ -634,7 +634,7 @@ function openM(symbol,nameArg){
     inst.map(i=>`<tr class="${i.b?'itot':''}"><td>${i.n}</td><td class="${i.u?'up':'dn'}">${i.v}</td><td style="font-size:10px">${i.u?'偏多':'⚠️ 出逃'}</td></tr>`).join('');
 
   // Chart
-  drawChart(q.sparkPrices||[],up);
+  drawChart(q.sparkPrices||[],up,q.regularMarketPreviousClose||null,q.fiftyDayAverage||null);
 
   // AI analysis via real Claude API
   document.getElementById('m-ait').textContent=`${symbol.replace('.TW','')} ${name} — AI 深度分析`;
@@ -654,17 +654,29 @@ function openM(symbol,nameArg){
   document.getElementById('mb').scrollTop=0;
 }
 
-function drawChart(prices,up){
+function drawChart(prices,up,prevClose,ma20){
   if(mChart){mChart.destroy();mChart=null;}
   if(!prices.length)return;
   const ctx=document.getElementById('m-chart').getContext('2d');
   const col=up?'#1fd97a':'#f04f4f';
-  const mn=Math.min(...prices)*.9985,mx=Math.max(...prices)*1.0015;
-  mChart=new Chart(ctx,{type:'line',data:{labels:prices.map((_,i)=>i),datasets:[{data:prices,borderColor:col,borderWidth:1.5,fill:true,
-    backgroundColor:c=>{const g=c.chart.ctx.createLinearGradient(0,0,0,110);g.addColorStop(0,up?'rgba(31,217,122,.18)':'rgba(240,79,79,.18)');g.addColorStop(1,up?'rgba(31,217,122,0)':'rgba(240,79,79,0)');return g;},
-    tension:.35,pointRadius:0,pointHoverRadius:4,pointHoverBackgroundColor:col}]},
+  const n=prices.length;
+  const prevData=prevClose?prices.map(()=>prevClose):null;
+  const ma20Data=ma20?prices.map(()=>ma20):null;
+  const allVals=[...prices,...(prevData||[]),...(ma20Data||[])].filter(Boolean);
+  const mn=Math.min(...allVals)*.9982,mx=Math.max(...allVals)*1.0018;
+  const datasets=[{
+    data:prices,borderColor:col,borderWidth:2,fill:true,
+    backgroundColor:ctx2=>{const g=ctx2.chart.ctx.createLinearGradient(0,0,0,110);g.addColorStop(0,up?'rgba(31,217,122,.18)':'rgba(240,79,79,.18)');g.addColorStop(1,up?'rgba(31,217,122,0)':'rgba(240,79,79,0)');return g;},
+    tension:.35,pointRadius:0,pointHoverRadius:4,pointHoverBackgroundColor:col,label:'今日'
+  }];
+  if(prevData) datasets.push({data:prevData,borderColor:'#f0a040',borderWidth:1.5,borderDash:[6,4],fill:false,tension:0,pointRadius:0,label:'前日收盤'});
+  if(ma20Data) datasets.push({data:ma20Data,borderColor:'#9b7dfa',borderWidth:1.5,borderDash:[3,3],fill:false,tension:0,pointRadius:0,label:'月均線MA20'});
+  mChart=new Chart(ctx,{type:'line',data:{labels:prices.map((_,i)=>i),datasets},
     options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false,backgroundColor:'#1c2333',borderColor:'rgba(255,255,255,.1)',borderWidth:1,titleColor:'#7d8494',bodyColor:'#dde2ee',callbacks:{label:c=>' '+c.raw}}},
+      plugins:{
+        legend:{display:true,position:'top',labels:{color:'#b8bece',font:{size:10,family:"'JetBrains Mono',monospace"},boxWidth:20,padding:8}},
+        tooltip:{mode:'index',intersect:false,backgroundColor:'#1c2333',borderColor:'rgba(255,255,255,.1)',borderWidth:1,titleColor:'#7d8494',bodyColor:'#dde2ee',callbacks:{label:c=>' '+c.raw}}
+      },
       scales:{x:{display:false},y:{position:'right',min:mn,max:mx,grid:{color:'rgba(255,255,255,.04)',drawTicks:false},ticks:{color:'#4a5060',font:{size:9,family:"'JetBrains Mono',monospace"},maxTicksLimit:4,callback:v=>typeof v==='number'?v.toFixed(v>1000?0:2):v}}},
       animation:{duration:500},interaction:{mode:'index',intersect:false}}
   });
@@ -730,24 +742,23 @@ async function readGist(){
 async function loadFromGist(){
   const data=await readGist();
   if(!data)return;
-  // Load latest snapshot
   const snap=data.snapshots?.[0];
   if(snap){
     if(snap.tw&&snap.tw.length){SD.tw=snap.tw;renderTW(snap.tw);}
     if(snap.us&&snap.us.length){SD.us=snap.us;renderUS(snap.us);}
+    if(snap.etf&&snap.etf.length){etfD=snap.etf;renderETFg(snap.etf);}
+    renderMbar();
     if(snap.analysis){
       const p=document.getElementById('mktAI');
       p.innerHTML=aiPanelHTML('AI 大盤總結（'+snap.slot+' · '+snap.ts+'）',
         '<div style="line-height:1.85;color:var(--t)">'+fmtAI(snap.analysis)+'</div>');
+    } else if(getKey()&&snap.tw&&snap.tw.length){
+      genMktAI(snap.tw,snap.us||[]);
     }
-  }
-  // Load news
-  if(data.news&&data.news.length){
-    // Merge with static news
   }
   const updt=data.lastUpdated||'';
   if(updt) document.getElementById('updt').textContent='Gist: '+updt;
-  toast('✓ 從 Gist 載入最新數據（'+( snap?.ts||'—')+'）');
+  toast('✓ 從 Gist 載入（'+( snap?.ts||'—')+'）');
 }
 
 // ── AUTO REFRESH (stock prices every 30s during market hours) ──
