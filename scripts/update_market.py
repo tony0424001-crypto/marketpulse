@@ -16,21 +16,50 @@ NAMES = {
     "GOOG":"Alphabet","NOK":"Nokia","DRAM":"Roundhill Mem ETF"
 }
 
+HEADERS_YAHOO = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Accept": "application/json",
+    "Accept-Language": "zh-TW,zh;q=0.9,en;q=0.8",
+}
+
 def fetch_quotes(symbols):
-    s = ",".join(symbols)
-    fields = "regularMarketPrice,regularMarketChange,regularMarketChangePercent,regularMarketOpen,regularMarketDayHigh,regularMarketDayLow,regularMarketVolume,trailingPE,dividendYield,shortName,regularMarketPreviousClose,fiftyDayAverage"
-    url = f"https://query1.finance.yahoo.com/v7/finance/quote?symbols={s}&fields={fields}"
-    headers = {"User-Agent": "Mozilla/5.0"}
+    """從 Yahoo Finance 抓取股票數據，失敗時逐筆重試"""
+    results = []
+    # Try all at once first
     try:
-        r = requests.get(url, headers=headers, timeout=15)
-        return r.json().get("quoteResponse", {}).get("result", [])
+        s = ",".join(symbols)
+        fields = "regularMarketPrice,regularMarketChange,regularMarketChangePercent,regularMarketOpen,regularMarketDayHigh,regularMarketDayLow,regularMarketVolume,trailingPE,dividendYield,shortName,regularMarketPreviousClose,fiftyDayAverage"
+        url = f"https://query1.finance.yahoo.com/v7/finance/quote?symbols={s}&fields={fields}"
+        r = requests.get(url, headers=HEADERS_YAHOO, timeout=20)
+        data = r.json().get("quoteResponse", {}).get("result", [])
+        if data:
+            print(f"  批次抓取成功: {len(data)} 筆")
+            return data
     except Exception as e:
-        print(f"fetch error: {e}")
-        return []
+        print(f"  批次失敗: {e}")
+
+    # Fallback: one by one
+    print("  逐筆抓取...")
+    for sym in symbols:
+        for attempt in range(3):
+            try:
+                url = f"https://query1.finance.yahoo.com/v7/finance/quote?symbols={sym}&fields=regularMarketPrice,regularMarketChange,regularMarketChangePercent,shortName,regularMarketPreviousClose,fiftyDayAverage,regularMarketOpen,regularMarketDayHigh,regularMarketDayLow,regularMarketVolume,trailingPE,dividendYield"
+                r = requests.get(url, headers=HEADERS_YAHOO, timeout=15)
+                q = r.json().get("quoteResponse", {}).get("result", [])
+                if q:
+                    results.append(q[0])
+                    print(f"    ✓ {sym}: {q[0].get('regularMarketPrice','—')}")
+                    break
+            except Exception as e:
+                print(f"    ✗ {sym} attempt {attempt+1}: {e}")
+                import time; time.sleep(1)
+
+    return results
 
 def call_claude(prompt):
+    """呼叫 Claude API"""
     if not CLAUDE_KEY:
-        return "（未設定 Claude API Key）"
+        return "（未設定 CLAUDE_API_KEY）"
     try:
         r = requests.post(
             "https://api.anthropic.com/v1/messages",
@@ -41,24 +70,40 @@ def call_claude(prompt):
             },
             json={
                 "model": "claude-sonnet-4-20250514",
-                "max_tokens": 800,
+                "max_tokens": 600,
                 "messages": [{"role": "user", "content": prompt}]
             },
-            timeout=30
+            timeout=40
         )
-        return r.json()["content"][0]["text"]
+        resp = r.json()
+        # Debug output
+        print(f"  Claude status: {r.status_code}")
+        if r.status_code != 200:
+            print(f"  Claude error: {resp}")
+            return f"Claude API 錯誤 {r.status_code}: {resp.get('error',{}).get('message','unknown')}"
+        content = resp.get("content", [])
+        if not content:
+            return "Claude 回傳空內容"
+        return content[0].get("text", "（無文字回傳）")
     except Exception as e:
-        return f"Claude 失敗: {e}"
+        return f"Claude 呼叫失敗: {e}"
 
 def read_gist():
     try:
         r = requests.get(
             f"https://api.github.com/gists/{GIST_ID}",
-            headers={"Authorization": f"token {GITHUB_TOKEN}", "User-Agent": "MarketPulse"}
+            headers={
+                "Authorization": f"token {GITHUB_TOKEN}",
+                "User-Agent": "MarketPulse",
+                "Accept": "application/vnd.github+json"
+            },
+            timeout=15
         )
-        content = r.json()["files"]["marketpulse_data.json"]["content"]
+        files = r.json().get("files", {})
+        content = files.get("marketpulse_data.json", {}).get("content", "{}")
         return json.loads(content)
-    except:
+    except Exception as e:
+        print(f"  read_gist error: {e}")
         return {"snapshots": [], "news": [], "lastUpdated": "", "slots": {}}
 
 def write_gist(data):
@@ -69,8 +114,16 @@ def write_gist(data):
             "User-Agent": "MarketPulse",
             "Accept": "application/vnd.github+json"
         },
-        json={"files": {"marketpulse_data.json": {"content": json.dumps(data, ensure_ascii=False, indent=2)}}}
+        json={
+            "files": {
+                "marketpulse_data.json": {
+                    "content": json.dumps(data, ensure_ascii=False, indent=2)
+                }
+            }
+        },
+        timeout=15
     )
+    print(f"  write_gist status: {r.status_code}")
     return r.status_code == 200
 
 def main():
@@ -78,43 +131,66 @@ def main():
     h = now.hour
     slot = "08:00" if h < 10 else "12:00" if h < 14 else "17:00"
     ts = now.strftime("%Y-%m-%d %H:%M")
-    print(f"=== {ts} CST ({slot}) ===")
+    print(f"=== MarketPulse {ts} CST ({slot}) ===")
 
-    print("抓台股...")
+    print("\n[1] 抓台股...")
     tw = fetch_quotes(TW_SYMBOLS)
-    print(f"  {len(tw)} 筆")
+    print(f"  結果: {len(tw)} 筆")
 
-    print("抓美股...")
+    print("\n[2] 抓美股...")
     us = fetch_quotes(US_SYMBOLS)
-    print(f"  {len(us)} 筆")
+    print(f"  結果: {len(us)} 筆")
 
-    tw_ctx = ", ".join([f"{NAMES.get(q['symbol'],q['symbol'])}: {q.get('regularMarketPrice','—')} ({'+' if (q.get('regularMarketChangePercent',0) or 0)>=0 else ''}{q.get('regularMarketChangePercent',0):.2f}%)" for q in tw])
-    us_ctx = ", ".join([f"{q['symbol']}: ${q.get('regularMarketPrice','—')} ({'+' if (q.get('regularMarketChangePercent',0) or 0)>=0 else ''}{q.get('regularMarketChangePercent',0):.2f}%)" for q in us])
-    slot_label = {"08:00":"開盤前快報","12:00":"盤中分析","17:00":"盤後總結"}[slot]
+    # Build context strings
+    def fmt_tw(q):
+        p = q.get('regularMarketPrice', 0) or 0
+        pct = q.get('regularMarketChangePercent', 0) or 0
+        name = NAMES.get(q['symbol'], q.get('shortName', q['symbol']))
+        return f"{name}: {p} ({'+' if pct>=0 else ''}{pct:.2f}%)"
 
-    print("呼叫 Claude...")
-    analysis = call_claude(f"""你是台灣股市分析師，請生成今日{slot_label}：
-台股：{tw_ctx}
-美股：{us_ctx}
-請用繁體中文250字以內分析：
-1. 今日最強/最弱標的與原因
-2. 主要驅動因子
-3. 操作建議與明日觀察重點
-語氣直接，數字用**粗體**。""")
-    print(f"  完成 ({len(analysis)} 字)")
+    def fmt_us(q):
+        p = q.get('regularMarketPrice', 0) or 0
+        pct = q.get('regularMarketChangePercent', 0) or 0
+        return f"{q['symbol']}: ${p} ({'+' if pct>=0 else ''}{pct:.2f}%)"
 
-    snapshot = {"ts": ts, "slot": slot, "tw": tw, "us": us, "analysis": analysis}
+    tw_ctx = ", ".join([fmt_tw(q) for q in tw]) if tw else "（無法取得台股數據）"
+    us_ctx = ", ".join([fmt_us(q) for q in us]) if us else "（無法取得美股數據）"
+    slot_label = {"08:00": "開盤前快報", "12:00": "盤中分析", "17:00": "盤後總結"}[slot]
 
-    print("寫入 Gist...")
+    print(f"\n[3] 呼叫 Claude 生成{slot_label}...")
+    prompt = (
+        f"你是台灣股市分析師，請生成今日{slot_label}。\n"
+        f"台股：{tw_ctx}\n"
+        f"美股：{us_ctx}\n"
+        f"請用繁體中文200字以內分析：\n"
+        f"1. 今日最強/最弱標的與原因\n"
+        f"2. 主要驅動因子\n"
+        f"3. 明日操作重點\n"
+        f"語氣直接，重要數字用**粗體**標示。"
+    )
+    analysis = call_claude(prompt)
+    print(f"  分析長度: {len(analysis)} 字")
+
+    snapshot = {
+        "ts": ts,
+        "slot": slot,
+        "tw": tw,
+        "us": us,
+        "analysis": analysis
+    }
+
+    print("\n[4] 寫入 Gist...")
     existing = read_gist()
     snaps = existing.get("snapshots", [])
     snaps.insert(0, snapshot)
     existing["snapshots"] = snaps[:9]
     existing["lastUpdated"] = ts
+    if "slots" not in existing:
+        existing["slots"] = {}
     existing["slots"][slot] = snapshot
     ok = write_gist(existing)
-    print(f"  {'成功' if ok else '失敗'}")
-    print("=== 完成 ===")
+    print(f"  Gist 寫入: {'成功 ✓' if ok else '失敗 ✗'}")
+    print("\n=== 完成 ===")
 
 if __name__ == "__main__":
     main()
