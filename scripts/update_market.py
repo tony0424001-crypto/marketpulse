@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
+"""
+MarketPulse 自動更新腳本
+- 抓取台股/美股即時數據存入 Gist
+- Claude 分析改在網頁端即時執行（不需要 API 餘額）
+"""
 import os, json, requests, datetime
 from zoneinfo import ZoneInfo
 
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
-CLAUDE_KEY   = os.environ.get("CLAUDE_API_KEY", "")
 GIST_ID      = os.environ.get("GIST_ID", "")
 TW = ZoneInfo("Asia/Taipei")
 
 TW_SYMBOLS = ["2330.TW","2317.TW","2449.TW","3189.TW","0050.TW","0056.TW"]
 US_SYMBOLS = ["MSFT","NVDA","AAPL","GOOG","NOK","DRAM"]
+ETF_SYMBOLS = ["0050.TW","0056.TW","00878.TW","00919.TW","006208.TW",
+               "00881.TW","00646.TW","00929.TW","00757.TW","00900.TW"]
 NAMES = {
     "2330.TW":"台積電","2317.TW":"鴻海","2449.TW":"京元電子",
     "3189.TW":"景碩","0050.TW":"元大台灣50","0056.TW":"元大高股息",
@@ -16,77 +22,81 @@ NAMES = {
     "GOOG":"Alphabet","NOK":"Nokia","DRAM":"Roundhill Mem ETF"
 }
 
-HEADERS_YAHOO = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    "Accept": "application/json",
-    "Accept-Language": "zh-TW,zh;q=0.9,en;q=0.8",
-}
+# 多個 User-Agent 輪替，避免被擋
+UA_LIST = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+]
 
-def fetch_quotes(symbols):
-    """從 Yahoo Finance 抓取股票數據，失敗時逐筆重試"""
+def get_headers(idx=0):
+    return {
+        "User-Agent": UA_LIST[idx % len(UA_LIST)],
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Referer": "https://finance.yahoo.com/",
+        "Origin": "https://finance.yahoo.com",
+    }
+
+def fetch_quotes(symbols, attempt=0):
+    """抓取股票數據，多個端點輪替"""
+    fields = "regularMarketPrice,regularMarketChange,regularMarketChangePercent,regularMarketOpen,regularMarketDayHigh,regularMarketDayLow,regularMarketVolume,trailingPE,dividendYield,shortName,regularMarketPreviousClose,fiftyDayAverage"
+    s = ",".join(symbols)
+
+    # 嘗試多個 Yahoo Finance 端點
+    endpoints = [
+        f"https://query1.finance.yahoo.com/v7/finance/quote?symbols={s}&fields={fields}",
+        f"https://query2.finance.yahoo.com/v7/finance/quote?symbols={s}&fields={fields}",
+        f"https://query1.finance.yahoo.com/v8/finance/quote?symbols={s}&fields={fields}",
+    ]
+
+    for i, url in enumerate(endpoints):
+        try:
+            r = requests.get(url, headers=get_headers(i), timeout=20)
+            print(f"  端點{i+1} status: {r.status_code}")
+            if r.status_code == 200:
+                data = r.json().get("quoteResponse", {}).get("result", [])
+                if data:
+                    print(f"  ✓ 成功抓到 {len(data)} 筆")
+                    return data
+        except Exception as e:
+            print(f"  端點{i+1} 失敗: {e}")
+
+    # 所有端點失敗，逐筆嘗試
+    print("  批次失敗，逐筆嘗試...")
     results = []
-    # Try all at once first
-    try:
-        s = ",".join(symbols)
-        fields = "regularMarketPrice,regularMarketChange,regularMarketChangePercent,regularMarketOpen,regularMarketDayHigh,regularMarketDayLow,regularMarketVolume,trailingPE,dividendYield,shortName,regularMarketPreviousClose,fiftyDayAverage"
-        url = f"https://query1.finance.yahoo.com/v7/finance/quote?symbols={s}&fields={fields}"
-        r = requests.get(url, headers=HEADERS_YAHOO, timeout=20)
-        data = r.json().get("quoteResponse", {}).get("result", [])
-        if data:
-            print(f"  批次抓取成功: {len(data)} 筆")
-            return data
-    except Exception as e:
-        print(f"  批次失敗: {e}")
-
-    # Fallback: one by one
-    print("  逐筆抓取...")
     for sym in symbols:
-        for attempt in range(3):
+        for ep_idx in range(2):
             try:
-                url = f"https://query1.finance.yahoo.com/v7/finance/quote?symbols={sym}&fields=regularMarketPrice,regularMarketChange,regularMarketChangePercent,shortName,regularMarketPreviousClose,fiftyDayAverage,regularMarketOpen,regularMarketDayHigh,regularMarketDayLow,regularMarketVolume,trailingPE,dividendYield"
-                r = requests.get(url, headers=HEADERS_YAHOO, timeout=15)
+                url = f"https://query{ep_idx+1}.finance.yahoo.com/v7/finance/quote?symbols={sym}&fields={fields}"
+                r = requests.get(url, headers=get_headers(ep_idx), timeout=15)
                 q = r.json().get("quoteResponse", {}).get("result", [])
                 if q:
                     results.append(q[0])
                     print(f"    ✓ {sym}: {q[0].get('regularMarketPrice','—')}")
                     break
-            except Exception as e:
-                print(f"    ✗ {sym} attempt {attempt+1}: {e}")
-                import time; time.sleep(1)
-
+            except:
+                pass
+        import time; time.sleep(0.5)
     return results
 
-def call_claude(prompt):
-    """呼叫 Claude API"""
-    if not CLAUDE_KEY:
-        return "（未設定 CLAUDE_API_KEY）"
+def fetch_spark(symbols):
+    """抓取分時走勢數據"""
+    s = ",".join(symbols)
     try:
-        r = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": CLAUDE_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json"
-            },
-            json={
-                "model": "claude-sonnet-4-20250514",
-                "max_tokens": 600,
-                "messages": [{"role": "user", "content": prompt}]
-            },
-            timeout=40
-        )
-        resp = r.json()
-        # Debug output
-        print(f"  Claude status: {r.status_code}")
-        if r.status_code != 200:
-            print(f"  Claude error: {resp}")
-            return f"Claude API 錯誤 {r.status_code}: {resp.get('error',{}).get('message','unknown')}"
-        content = resp.get("content", [])
-        if not content:
-            return "Claude 回傳空內容"
-        return content[0].get("text", "（無文字回傳）")
+        url = f"https://query1.finance.yahoo.com/v8/finance/spark?symbols={s}&range=1d&interval=5m"
+        r = requests.get(url, headers=get_headers(), timeout=15)
+        sparks = {}
+        data = r.json().get("spark", {}).get("result", [])
+        for item in data:
+            sym = item.get("symbol")
+            prices = item.get("response", [{}])[0].get("indicators", {}).get("quote", [{}])[0].get("close", [])
+            sparks[sym] = [p for p in prices if p is not None]
+        return sparks
     except Exception as e:
-        return f"Claude 呼叫失敗: {e}"
+        print(f"  spark 失敗: {e}")
+        return {}
 
 def read_gist():
     try:
@@ -135,51 +145,41 @@ def main():
 
     print("\n[1] 抓台股...")
     tw = fetch_quotes(TW_SYMBOLS)
-    print(f"  結果: {len(tw)} 筆")
+    print(f"  台股: {len(tw)} 筆")
 
     print("\n[2] 抓美股...")
     us = fetch_quotes(US_SYMBOLS)
-    print(f"  結果: {len(us)} 筆")
+    print(f"  美股: {len(us)} 筆")
 
-    # Build context strings
-    def fmt_tw(q):
-        p = q.get('regularMarketPrice', 0) or 0
-        pct = q.get('regularMarketChangePercent', 0) or 0
-        name = NAMES.get(q['symbol'], q.get('shortName', q['symbol']))
-        return f"{name}: {p} ({'+' if pct>=0 else ''}{pct:.2f}%)"
+    print("\n[3] 抓 ETF...")
+    etf = fetch_quotes(ETF_SYMBOLS)
+    print(f"  ETF: {len(etf)} 筆")
 
-    def fmt_us(q):
-        p = q.get('regularMarketPrice', 0) or 0
-        pct = q.get('regularMarketChangePercent', 0) or 0
-        return f"{q['symbol']}: ${p} ({'+' if pct>=0 else ''}{pct:.2f}%)"
+    print("\n[4] 抓分時走勢...")
+    all_syms = TW_SYMBOLS + US_SYMBOLS
+    sparks = fetch_spark(all_syms)
+    print(f"  走勢: {len(sparks)} 筆")
 
-    tw_ctx = ", ".join([fmt_tw(q) for q in tw]) if tw else "（無法取得台股數據）"
-    us_ctx = ", ".join([fmt_us(q) for q in us]) if us else "（無法取得美股數據）"
-    slot_label = {"08:00": "開盤前快報", "12:00": "盤中分析", "17:00": "盤後總結"}[slot]
+    # 把 sparkPrices 合併進 quotes
+    def merge_spark(quotes, sparks):
+        for q in quotes:
+            q["sparkPrices"] = sparks.get(q.get("symbol", ""), [])
+        return quotes
 
-    print(f"\n[3] 呼叫 Claude 生成{slot_label}...")
-    prompt = (
-        f"你是台灣股市分析師，請生成今日{slot_label}。\n"
-        f"台股：{tw_ctx}\n"
-        f"美股：{us_ctx}\n"
-        f"請用繁體中文200字以內分析：\n"
-        f"1. 今日最強/最弱標的與原因\n"
-        f"2. 主要驅動因子\n"
-        f"3. 明日操作重點\n"
-        f"語氣直接，重要數字用**粗體**標示。"
-    )
-    analysis = call_claude(prompt)
-    print(f"  分析長度: {len(analysis)} 字")
+    tw = merge_spark(tw, sparks)
+    us = merge_spark(us, sparks)
 
+    # 組成快照（不含 Claude 分析，由網頁端即時呼叫）
     snapshot = {
         "ts": ts,
         "slot": slot,
         "tw": tw,
         "us": us,
-        "analysis": analysis
+        "etf": etf,
+        "analysis": ""  # 網頁端即時生成
     }
 
-    print("\n[4] 寫入 Gist...")
+    print("\n[5] 寫入 Gist...")
     existing = read_gist()
     snaps = existing.get("snapshots", [])
     snaps.insert(0, snapshot)
@@ -188,9 +188,14 @@ def main():
     if "slots" not in existing:
         existing["slots"] = {}
     existing["slots"][slot] = snapshot
+
     ok = write_gist(existing)
-    print(f"  Gist 寫入: {'成功 ✓' if ok else '失敗 ✗'}")
-    print("\n=== 完成 ===")
+    print(f"  結果: {'✓ 成功' if ok else '✗ 失敗'}")
+
+    # 統計
+    print(f"\n=== 完成 ===")
+    print(f"  台股: {len(tw)} 筆, 美股: {len(us)} 筆, ETF: {len(etf)} 筆")
+    print(f"  Claude 分析: 由網頁端即時執行（不需要伺服器端 API 餘額）")
 
 if __name__ == "__main__":
     main()
