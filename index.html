@@ -281,6 +281,7 @@ tbody tr:last-child td{border-bottom:none;}tbody tr{cursor:pointer;transition:ba
 <script>
 // ── CONSTANTS ──
 const GITHUB_USER = 'tony0424001-crypto';
+const GROQ_KEY_DEFAULT = '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';
 const GIST_ID = '30f70af58eaeb7deba78af6b75672503';
 const GIST_RAW_BASE = 'https://gist.githubusercontent.com/'+GITHUB_USER+'/';
 
@@ -583,7 +584,7 @@ function openED(i){
   ab.innerHTML=thinkHTML();
   det.scrollIntoView({behavior:'smooth',block:'nearest'});
   const pc=p?`目前股價 ${p.toFixed(2)}，今日${pct>=0?'上漲':'下跌'} ${Math.abs(pct).toFixed(2)}%`:'（無即時數據）';
-  callAI(`你是台灣股市ETF分析師。請分析ETF「${m.n||sym}」（${sym.replace('.TW','')}）：類型 ${m.tp||'—'}，年化殖利率 ${m.y||'—'}，費用率 ${m.e||'—'}，${pc}，前五大成分股：${(m.h||[]).slice(0,5).map(h=>h.n+'('+h.w+'%)').join('、')}。用繁體中文200字以內分析：(1)目前進場理由或風險，(2)主要壓力支撐，(3)操作建議。語氣直接，不需開場白。`)
+  callGroq(`你是台灣股市ETF分析師。請分析ETF「${m.n||sym}」（${sym.replace('.TW','')}）：類型 ${m.tp||'—'}，年化殖利率 ${m.y||'—'}，費用率 ${m.e||'—'}，${pc}，前五大成分股：${(m.h||[]).slice(0,5).map(h=>h.n+'('+h.w+'%)').join('、')}。用繁體中文200字以內分析：(1)目前進場理由或風險，(2)主要壓力支撐，(3)操作建議。語氣直接，不需開場白。`)
   .then(t=>{var h=t.split('\n').join('<br>');h=h.replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>');ab.innerHTML='<div style="line-height:1.85">'+h+'</div>';})
   .catch(()=>{ab.innerHTML='<span style="color:var(--t3)">（需填入 Claude API Key 才能啟用 AI 分析）</span>';});
 }
@@ -647,7 +648,7 @@ function openM(symbol,nameArg){
   // AI analysis via real Claude API
   document.getElementById('m-ait').textContent=`${symbol.replace('.TW','')} ${name} — AI 深度分析`;
   document.getElementById('m-aib').innerHTML=thinkHTML();
-  callAI(`你是台灣股市技術分析師，請對「${name}（${symbol.replace('.TW','')}）」做深度分析：
+  callGroq(`你是台灣股市技術分析師，請對「${name}（${symbol.replace('.TW','')}）」做深度分析：
 股價：${pf}，今日${up?'上漲':'下跌'} ${Math.abs(pct).toFixed(2)}%
 開/高/低：${ppp(o)} / ${ppp(h)} / ${ppp(l)}
 主要壓力位：${res.map(r=>r.p).join('、')}
@@ -743,6 +744,30 @@ function closeM(){document.getElementById('ov').classList.remove('on');clearInte
 function handleOv(e){if(e.target===document.getElementById('ov'))closeM();}
 
 // ── NEWS ──
+function renderGistNews(news, slot){
+  // Update news tab with real news from Gist
+  const slotLabels={'08:00':'開盤前快報','12:00':'盤中分析','17:00':'盤後總結'};
+  const nlist=document.getElementById('nlist');
+  if(!nlist||!news.length) return;
+  const impMap={up:'iup',dn:'idn',neu:'ineu'};
+  const ilMap={up:'↑ 利多',dn:'↓ 利空',neu:'→ 中性'};
+  // Simple sentiment detection
+  const detect=t=>{
+    const up=['上漲','利多','突破','超預期','買超','大漲','強勢'];
+    const dn=['下跌','利空','跌破','不及預期','賣超','大跌','下修','起訴','制裁'];
+    if(up.some(w=>t.includes(w))) return 'up';
+    if(dn.some(w=>t.includes(w))) return 'dn';
+    return 'neu';
+  };
+  nlist.innerHTML=news.map(n=>{
+    const imp=detect(n.title);
+    return`<div class="nit"><div><div class="nsr">${n.source}</div><div class="nim ${impMap[imp]}" style="margin-top:4px">${ilMap[imp]}</div></div><div><div class="ntx">${n.title}</div><div class="ntm">${n.slot||slot} · ${n.time||''}</div></div></div>`;
+  }).join('');
+  // Update section header
+  const sh=document.querySelector('#pg-news .sh .slbl');
+  if(sh) sh.textContent=slotLabels[slot]||'即時情報流';
+}
+
 function renderNews(){
   const cats=['全部','財經新聞','時事要聞','科技發表','財報'];
   document.getElementById('nfilt').innerHTML=cats.map(c=>`<div class="stab ${c===nf?'on':''}" style="font-size:10px;padding:3px 8px" onclick="setNF('${c}')">${c}</div>`).join('');
@@ -772,18 +797,21 @@ async function genNewsAI(){
 
 async function genMktAI(tw,us){
   const p=document.getElementById('mktAI');
-  if(!getKey()){
-    p.innerHTML=aiPanelHTML('AI 大盤總結','<span style="color:var(--t3);font-size:12px">請在右上角填入 Claude API Key 以啟用 AI 分析</span>');
-    return;
-  }
-  p.innerHTML=aiPanelHTML('AI 大盤總結（'+curSlot+' 分析）',thinkHTML());
-  const tc=tw.slice(0,4).map(q=>(META[q.symbol]?.n||q.shortName||q.symbol)+': '+(q.regularMarketPrice?.toFixed(1)||'—')+' ('+(q.regularMarketChangePercent>=0?'+':'')+(q.regularMarketChangePercent?.toFixed(2)||'0')+'%)').join('，');
-  const uc=us.slice(0,4).map(q=>q.symbol+': $'+(q.regularMarketPrice?.toFixed(2)||'—')+' ('+(q.regularMarketChangePercent>=0?'+':'')+(q.regularMarketChangePercent?.toFixed(2)||'0')+'%)').join('，');
+  const slotLabels={'08:00':'開盤前快報','12:00':'盤中分析','17:00':'盤後總結'};
+  const label=slotLabels[curSlot]||'大盤分析';
+  p.innerHTML=aiPanelHTML('AI '+label,thinkHTML());
+  const tc=tw.filter(q=>q.regularMarketPrice).slice(0,6).map(q=>(META[q.symbol]?.n||q.shortName||q.symbol)+': '+(q.regularMarketPrice?.toFixed(1)||'—')+' ('+(q.regularMarketChangePercent>=0?'+':'')+(q.regularMarketChangePercent?.toFixed(2)||'0')+'%)').join('，');
+  const uc=us.filter(q=>q.regularMarketPrice).slice(0,4).map(q=>q.symbol+': $'+(q.regularMarketPrice?.toFixed(2)||'—')+' ('+(q.regularMarketChangePercent>=0?'+':'')+(q.regularMarketChangePercent?.toFixed(2)||'0')+'%)').join('，');
+  const prompts={
+    '08:00':'你是台灣股市分析師。現在台股即將開盤。美股昨收：'+uc+'。台股：'+tc+'。用繁體中文200字以內生成「開盤前快報」，分析：(1)美股昨日對今日台股影響，(2)需注意的消息面，(3)開盤方向預判。語氣直接，重要數字用**粗體**。',
+    '12:00':'你是台灣股市分析師。現在台股盤中。台股：'+tc+'。美股：'+uc+'。用繁體中文200字以內生成「盤中分析」，分析：(1)目前最強/最弱標的，(2)盤中驅動因子，(3)下午盤操作重點。語氣直接，重要數字用**粗體**。',
+    '17:00':'你是台灣股市分析師。台股收盤後。台股：'+tc+'。美股：'+uc+'。用繁體中文200字以內生成「盤後總結」，分析：(1)今日最強/最弱標的，(2)主要驅動因子，(3)明日操作重點。語氣直接，重要數字用**粗體**。'
+  };
   let t;
   try{
-    t=await callAI('你是台股分析師。用繁體中文200字以內做今日盤後總結。台股：'+tc+'。美股：'+uc+'。請分析：(1)今日最強/最弱標的，(2)主要驅動因子，(3)明日操作重點。語氣直接，重要數字用**粗體**。');
+    t=await callGroq(prompts[curSlot]||prompts['17:00']);
   }catch(e){
-    t='Claude 呼叫失敗：'+e.message;
+    t='AI 分析失敗：'+e.message;
   }
   const ab=p.querySelector('.abod');
   if(ab){ab.innerHTML='<div style="line-height:1.85;color:var(--t)">'+fmtAI(t)+'</div>';}
@@ -849,11 +877,15 @@ async function loadFromGist(){
     renderMbar();
     if(snap.analysis){
       const p=document.getElementById('mktAI');
-      p.innerHTML=aiPanelHTML('AI 大盤總結（'+snap.slot+' · '+snap.ts+'）',
+      const slotL={'08:00':'開盤前快報','12:00':'盤中分析','17:00':'盤後總結'};
+      p.innerHTML=aiPanelHTML('AI '+(slotL[snap.slot]||'大盤分析')+' · '+snap.ts,
         '<div style="line-height:1.85;color:var(--t)">'+fmtAI(snap.analysis)+'</div>');
-    } else if(getKey()&&snap.tw&&snap.tw.length){
-      genMktAI(snap.tw,snap.us||[]);
+    } else {
+      genMktAI(snap.tw||[],snap.us||[]);
     }
+    // Load news
+    const newsData=data.latestNews||snap.news||[];
+    if(newsData.length) renderGistNews(newsData, snap.slot||'17:00');
   }
   const updt=data.lastUpdated||'';
   if(updt) document.getElementById('updt').textContent='Gist: '+updt;
@@ -927,6 +959,24 @@ function startScheduleChecker(){
 
 
 function fmtAI(t){return t.split('\n').join('<br>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>');}
+// ── GROQ API (免費) ──
+async function callGroq(prompt){
+  const key=GROQ_KEY_DEFAULT;
+  if(!key) throw new Error('no groq key');
+  const r=await fetch('https://api.groq.com/openai/v1/chat/completions',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+    body:JSON.stringify({
+      model:'llama-3.3-70b-versatile',
+      max_tokens:600,
+      messages:[{role:'user',content:prompt}]
+    })
+  });
+  if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.error?.message||r.status);}
+  const d=await r.json();
+  return d.choices?.[0]?.message?.content||'';
+}
+
 // ── CLAUDE API ──
 async function callAI(prompt){
   const key=getKey();if(!key)throw new Error('no key');
