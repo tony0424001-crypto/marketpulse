@@ -404,7 +404,8 @@ window.addEventListener('DOMContentLoaded',async()=>{
   // Try to load from Gist on startup
   if(GIST_ID){
     await loadFromGist();
-    await fetchETF();
+    // Only fetch ETF if Gist didn't provide ETF data
+    if(!etfD.length) await fetchETF();
   }else{
     // No Gist configured - just render empty state
     document.getElementById('updt').textContent='請點擊「抓取最新數據」';
@@ -427,19 +428,25 @@ async function fetchAll(){
     const n=new Date();document.getElementById('updt').textContent=pad(n.getHours())+':'+pad(n.getMinutes())+' 更新';
     if(getKey())genMktAI(tw,us);
   }catch(e){
-    toast('⚠ 使用示範數據（CORS 限制）');
-    SD.tw=DEMO_TW;SD.us=DEMO_US;
-    renderMbar();renderTW(DEMO_TW);renderUS(DEMO_US);
-    etfD=DEMO_TW.filter(s=>s.symbol.startsWith('0'));
-    renderETFg(etfD);saveSnap();
-    if(getKey())genMktAI(DEMO_TW,DEMO_US);
+    // 如果已有 Gist 數據就不覆蓋，只提示
+    if(SD.tw.length>0){
+      toast('⚠ 即時抓取失敗，顯示 Gist 快取數據');
+    } else {
+      toast('⚠ 使用示範數據（Yahoo Finance CORS 限制）');
+      SD.tw=DEMO_TW;SD.us=DEMO_US;
+      renderMbar();renderTW(DEMO_TW);renderUS(DEMO_US);
+      etfD=DEMO_TW.filter(s=>s.symbol.startsWith('0'));
+      renderETFg(etfD);
+      if(getKey())genMktAI(DEMO_TW,DEMO_US);
+    }
+    saveSnap();
   }
   btn.classList.remove('busy');btn.textContent='↻ 抓取最新數據';
 }
 
 async function fetchQ(syms){
   const s=syms.join(',');
-  const qurl=`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${s}&fields=regularMarketPrice,regularMarketChange,regularMarketChangePercent,regularMarketOpen,regularMarketDayHigh,regularMarketDayLow,regularMarketVolume,trailingPE,dividendYield,marketCap,shortName`;
+  const qurl=`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${s}&fields=regularMarketPrice,regularMarketChange,regularMarketChangePercent,regularMarketOpen,regularMarketDayHigh,regularMarketDayLow,regularMarketVolume,trailingPE,dividendYield,marketCap,shortName,regularMarketPreviousClose,fiftyDayAverage`;
   const[qr,sr]=await Promise.all([
     fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(qurl)}`,{signal:AbortSignal.timeout(9000)}),
     fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/spark?symbols=${s}&range=1d&interval=5m`)}`,{signal:AbortSignal.timeout(9000)})
@@ -482,7 +489,8 @@ async function fetchETF(){
     else{const m=EMETA[sym]||{};results.push({symbol:sym,shortName:m.n||sym,regularMarketPrice:null,regularMarketChangePercent:0,sparkPrices:[]});}
     await new Promise(r=>setTimeout(r,300));
   }
-  etfD=results;renderETFg(etfD);
+  if(results.length>0){etfD=results;renderETFg(etfD);}
+  else if(etfD.length>0){renderETFg(etfD);} // keep existing Gist data
   toast('ETF 完成（'+results.filter(r=>r.regularMarketPrice).length+'/10）');
 }
 
@@ -541,7 +549,7 @@ function renderUS(data){
 // ── ETF ──
 function renderETFg(data){
   document.getElementById('etfg').innerHTML=ETFS.map((sym,i)=>{
-    const q=data.find(s=>s.symbol===sym)||{},m=EMETA[sym]||{};
+    const q=data.find(s=>(s.symbol===sym||s.symbol===sym.replace('.TW','')+'.TW'))||{},m=EMETA[sym]||{};
     const p=q.regularMarketPrice,pct=q.regularMarketChangePercent||0,up=pct>=0;
     const pf=p?(p>100?p.toFixed(1):p.toFixed(2)):'—',cf=p?(up?'+':'')+pct.toFixed(2)+'%':'—';
     return`<div class="ec" id="ec-${i}" onclick="openED(${i})">
@@ -661,7 +669,7 @@ function drawChart(prices,up,prevClose,ma20){
   const col=up?'#1fd97a':'#f04f4f';
   const n=prices.length;
   const prevData=prevClose?prices.map(()=>prevClose):null;
-  const ma20Data=ma20?prices.map(()=>ma20):null;
+  const ma20Data=(ma20&&ma20>0)?prices.map(()=>ma20):null;
   const allVals=[...prices,...(prevData||[]),...(ma20Data||[])].filter(Boolean);
   const mn=Math.min(...allVals)*.9982,mx=Math.max(...allVals)*1.0018;
   const datasets=[{
@@ -725,18 +733,45 @@ async function genMktAI(tw,us){
 // ── GIST STORAGE ──
 async function readGist(){
   if(!GIST_ID){console.log('GIST_ID not set');return null;}
-  try{
-    // Use raw URL with cache-bust to always get latest
-    const url=GIST_RAW_BASE+GIST_ID+'/raw/marketpulse_data.json?t='+Date.now();
-    const r=await fetch(url,{signal:AbortSignal.timeout(8000)});
-    if(!r.ok)throw new Error('gist fetch failed');
-    const data=await r.json();
-    gistCache=data;
-    return data;
-  }catch(e){
-    console.warn('Gist read failed:',e.message);
-    return null;
+  const rawUrl='https://gist.githubusercontent.com/'+GITHUB_USER+'/'+GIST_ID+'/raw/marketpulse_data.json';
+  const apiUrl='https://api.github.com/gists/'+GIST_ID;
+  // Try multiple approaches - secret gist needs proxy or API
+  const attempts=[
+    // 1. corsproxy -> raw URL
+    async()=>{
+      const r=await fetch('https://corsproxy.io/?'+encodeURIComponent(rawUrl+'?t='+Date.now()),{signal:AbortSignal.timeout(10000)});
+      if(!r.ok) throw new Error(r.status);
+      return await r.json();
+    },
+    // 2. allorigins -> raw URL  
+    async()=>{
+      const r=await fetch('https://api.allorigins.win/get?url='+encodeURIComponent(rawUrl+'?t='+Date.now()),{signal:AbortSignal.timeout(10000)});
+      if(!r.ok) throw new Error(r.status);
+      const j=await r.json();
+      return JSON.parse(j.contents);
+    },
+    // 3. corsproxy -> GitHub API
+    async()=>{
+      const r=await fetch('https://corsproxy.io/?'+encodeURIComponent(apiUrl),{signal:AbortSignal.timeout(10000)});
+      if(!r.ok) throw new Error(r.status);
+      const raw=await r.json();
+      return JSON.parse(raw.files['marketpulse_data.json'].content);
+    },
+  ];
+  for(let i=0;i<attempts.length;i++){
+    try{
+      const data=await attempts[i]();
+      if(data&&data.snapshots!==undefined){
+        gistCache=data;
+        console.log('Gist loaded via method '+(i+1)+', snapshots:',data.snapshots.length);
+        return data;
+      }
+    }catch(e){
+      console.warn('Gist method '+(i+1)+' failed:',e.message);
+    }
   }
+  console.warn('All Gist methods failed');
+  return null;
 }
 
 async function loadFromGist(){
@@ -746,7 +781,12 @@ async function loadFromGist(){
   if(snap){
     if(snap.tw&&snap.tw.length){SD.tw=snap.tw;renderTW(snap.tw);}
     if(snap.us&&snap.us.length){SD.us=snap.us;renderUS(snap.us);}
-    if(snap.etf&&snap.etf.length){etfD=snap.etf;renderETFg(snap.etf);}
+    if(snap.etf&&snap.etf.length){
+      etfD=snap.etf;
+      // Normalize symbol field - yfinance might return slightly different format
+      etfD=etfD.map(q=>({...q,symbol:q.symbol||q.ticker||''}));
+      renderETFg(etfD);
+    }
     renderMbar();
     if(snap.analysis){
       const p=document.getElementById('mktAI');
@@ -771,18 +811,17 @@ function startAutoRefresh(){
     const isUSMarket=h>=22||h<5;
     if(isTWMarket||isUSMarket){
       try{
-        // Silently refresh prices only (no AI, no toast)
-        const syms=isTWMarket?[...TW,...US]:US;
-        const [tw,us]=await Promise.all([fetchQ(TW),fetchQ(US)]);
-        SD.tw=tw;SD.us=us;
-        renderTW(tw);renderUS(us);
-        renderMbar();
-        const n=new Date();
-        document.getElementById('updt').textContent=pad(n.getHours())+':'+pad(n.getMinutes())+':'+pad(n.getSeconds())+' 自動更新';
-      }catch(e){}
+        const[tw,us]=await Promise.all([fetchQ(TW),fetchQ(US)]);
+        if(tw.length){SD.tw=tw;renderTW(tw);}
+        if(us.length){SD.us=us;renderUS(us);}
+        if(tw.length||us.length){
+          renderMbar();
+          const n=new Date();
+          document.getElementById('updt').textContent=pad(n.getHours())+':'+pad(n.getMinutes())+':'+pad(n.getSeconds())+' 自動更新';
+        }
+      }catch(e){} // silent fail - no toast, no demo fallback
     }
-  },30000); // every 30 seconds
-  console.log('Auto-refresh started (30s interval)');
+  },30000);
 }
 
 function stopAutoRefresh(){
