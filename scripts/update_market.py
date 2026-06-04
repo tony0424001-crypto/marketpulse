@@ -123,6 +123,20 @@ def fetch_all_stocks(symbols):
                         ma20 = round(info['fiftyDayAverage'], 2)
                 except: pass
                 
+                # Get extra info (PE, market cap)
+                pe_ratio = None
+                market_cap = None
+                try:
+                    info = t.info
+                    pe_ratio = info.get('trailingPE') or info.get('forwardPE')
+                    market_cap = info.get('marketCap')
+                    if not ma20:
+                        ma20 = info.get('fiftyDayAverage')
+                except: pass
+                # Fallback PE from fast_info
+                if not pe_ratio:
+                    pe_ratio = getattr(fi,'pe_ratio',None)
+                
                 results[sym] = {
                     "symbol": sym,
                     "shortName": NAMES.get(sym, sym),
@@ -130,12 +144,13 @@ def fetch_all_stocks(symbols):
                     "regularMarketChange": round(price-prev_close,2) if price and prev_close else 0,
                     "regularMarketChangePercent": round((price-prev_close)/prev_close*100,2) if price and prev_close else 0,
                     "regularMarketPreviousClose": round(prev_close,2) if prev_close else None,
-                    "fiftyDayAverage": ma20,
+                    "fiftyDayAverage": round(ma20,2) if ma20 else None,
                     "regularMarketOpen": round(getattr(fi,'open',price or 0) or price or 0, 2),
                     "regularMarketDayHigh": round(getattr(fi,'day_high',price or 0) or price or 0, 2),
                     "regularMarketDayLow": round(getattr(fi,'day_low',price or 0) or price or 0, 2),
                     "regularMarketVolume": int(getattr(fi,'three_month_average_volume',0) or 0),
-                    "trailingPE": round(getattr(fi,'pe_ratio',None) or 0, 2) or None,
+                    "trailingPE": round(pe_ratio,2) if pe_ratio else None,
+                    "marketCap": int(market_cap) if market_cap else None,
                     "dividendYield": getattr(fi,'dividend_yield',None),
                     "sparkPrices": today_spark,
                     "prevSparkPrices": prev_spark,
