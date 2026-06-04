@@ -2,9 +2,9 @@ name: MarketPulse 自動更新
 
 on:
   schedule:
-    - cron: '0 0 * * 1-5'   # 台灣 08:00
-    - cron: '0 4 * * 1-5'   # 台灣 12:00
-    - cron: '0 9 * * 1-5'   # 台灣 17:00
+    - cron: '0 0 * * 1-5'   # 台灣 08:00（開盤前快報）
+    - cron: '0 4 * * 1-5'   # 台灣 12:00（盤中分析）
+    - cron: '0 9 * * 1-5'   # 台灣 17:00（盤後總結）
   workflow_dispatch:
 
 jobs:
@@ -26,6 +26,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.MP_GITHUB_TOKEN }}
           GIST_ID: ${{ secrets.MP_GIST_ID }}
+          GROQ_KEY: ${{ secrets.MP_GROQ_KEY }}
         run: python scripts/update_market.py
 
       - name: Commit timestamp
