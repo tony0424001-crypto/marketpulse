@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-MarketPulse - 使用 yfinance 抓取數據（處理 Yahoo Finance 反爬蟲）
-Claude 分析由網頁端即時執行
+MarketPulse - yfinance 版本
+抓取今日+昨日分時走勢、月均線，存入 Gist
 """
 import os, json, requests, datetime, time
 from zoneinfo import ZoneInfo
@@ -23,48 +23,62 @@ NAMES = {
     "GOOG":"Alphabet","NOK":"Nokia","DRAM":"Roundhill Mem ETF"
 }
 
-def fetch_all_yfinance(symbols):
-    """使用 yfinance 批次抓取"""
+def fetch_all(symbols):
     import yfinance as yf
     results = {}
+    print(f"  抓取 {len(symbols)} 個標的...")
     
-    print(f"  下載 {len(symbols)} 個標的...")
-    try:
-        # Batch download
-        tickers = yf.Tickers(" ".join(symbols))
-        for sym in symbols:
+    for sym in symbols:
+        for attempt in range(2):
             try:
-                t = tickers.tickers[sym]
+                t = yf.Ticker(sym)
                 fi = t.fast_info
-                hist = t.history(period="5d")
-                
-                price = getattr(fi, 'last_price', None)
+
+                price      = getattr(fi, 'last_price', None)
                 prev_close = getattr(fi, 'previous_close', None)
-                ma50 = None
-                spark = []
                 
-                if not hist.empty:
-                    closes = hist['Close'].tolist()
-                    if len(closes) >= 2:
-                        prev_close = prev_close or closes[-2]
-                    if len(closes) >= 10:
-                        ma50 = sum(closes[-20:]) / min(len(closes), 20)
-                # Try to get 50-day MA from info
+                # 用 2d 5m 同時取今日和昨日分時數據
+                intraday = t.history(period="2d", interval="5m")
+                
+                today_spark = []
+                prev_spark  = []
+                ma20        = None
+                
+                if not intraday.empty:
+                    intraday.index = intraday.index.tz_convert(TW)
+                    today = datetime.datetime.now(TW).date()
+                    yesterday = today - datetime.timedelta(days=1)
+                    # 往前找最近的交易日
+                    for delta in range(1, 5):
+                        prev_day = today - datetime.timedelta(days=delta)
+                        prev_rows = intraday[intraday.index.date == prev_day]
+                        if not prev_rows.empty:
+                            prev_spark = [round(p,2) for p in prev_rows['Close'].tolist() if p==p]
+                            if not prev_close:
+                                prev_close = prev_spark[-1] if prev_spark else None
+                            break
+                    
+                    today_rows = intraday[intraday.index.date == today]
+                    if not today_rows.empty:
+                        today_spark = [round(p,2) for p in today_rows['Close'].tolist() if p==p]
+                
+                # 月均線：用 60 天日K 計算 20MA
+                try:
+                    hist60 = t.history(period="60d", interval="1d")
+                    if not hist60.empty and len(hist60) >= 10:
+                        closes = hist60['Close'].tolist()
+                        ma20 = round(sum(closes[-20:]) / min(len(closes), 20), 2)
+                except:
+                    pass
+                
+                # 如果 fast_info 有 fiftyDayAverage 用那個（更準確）
                 try:
                     info = t.info
                     if info.get('fiftyDayAverage'):
-                        ma50 = info['fiftyDayAverage']
+                        ma20 = round(info['fiftyDayAverage'], 2)
                 except:
                     pass
-                
-                # Get today's intraday spark
-                try:
-                    intraday = t.history(period="1d", interval="5m")
-                    if not intraday.empty:
-                        spark = [round(p, 2) for p in intraday['Close'].tolist() if p == p]
-                except:
-                    pass
-                
+
                 results[sym] = {
                     "symbol": sym,
                     "shortName": NAMES.get(sym, getattr(fi, 'currency', sym)),
@@ -72,25 +86,35 @@ def fetch_all_yfinance(symbols):
                     "regularMarketChange": round(price - prev_close, 2) if price and prev_close else 0,
                     "regularMarketChangePercent": round((price - prev_close) / prev_close * 100, 2) if price and prev_close else 0,
                     "regularMarketPreviousClose": round(prev_close, 2) if prev_close else None,
-                    "fiftyDayAverage": round(ma50, 2) if ma50 else None,
-                    "regularMarketOpen": round(getattr(fi, 'open', price or 0), 2),
-                    "regularMarketDayHigh": round(getattr(fi, 'day_high', price or 0), 2),
-                    "regularMarketDayLow": round(getattr(fi, 'day_low', price or 0), 2),
+                    "fiftyDayAverage": ma20,
+                    "regularMarketOpen": round(getattr(fi, 'open', price or 0) or price or 0, 2),
+                    "regularMarketDayHigh": round(getattr(fi, 'day_high', price or 0) or price or 0, 2),
+                    "regularMarketDayLow": round(getattr(fi, 'day_low', price or 0) or price or 0, 2),
                     "regularMarketVolume": int(getattr(fi, 'three_month_average_volume', 0) or 0),
                     "trailingPE": round(getattr(fi, 'pe_ratio', None) or 0, 2) or None,
                     "dividendYield": getattr(fi, 'dividend_yield', None),
-                    "sparkPrices": spark
+                    "sparkPrices": today_spark,    # 今日分時
+                    "prevSparkPrices": prev_spark,  # 昨日分時（新增）
                 }
-                p = results[sym]['regularMarketPrice']
+                
+                p   = results[sym]['regularMarketPrice']
                 pct = results[sym]['regularMarketChangePercent']
-                print(f"    ✓ {sym}: {p} ({'+' if pct>=0 else ''}{pct:.2f}%)")
-                time.sleep(0.3)
+                ma_str = f" MA20={ma20}" if ma20 else ""
+                prev_str = f" prev={len(prev_spark)}pts" if prev_spark else ""
+                print(f"    ✓ {sym}: {p} ({'+' if pct>=0 else ''}{pct:.2f}%){ma_str}{prev_str}")
+                time.sleep(0.4)
+                break
+                
             except Exception as e:
-                print(f"    ✗ {sym}: {e}")
-                results[sym] = {"symbol": sym, "shortName": NAMES.get(sym, sym), "regularMarketPrice": None, "sparkPrices": []}
-    except Exception as e:
-        print(f"  批次失敗: {e}")
-    
+                if attempt == 0:
+                    time.sleep(1)
+                else:
+                    print(f"    ✗ {sym}: {e}")
+                    results[sym] = {
+                        "symbol": sym, "shortName": NAMES.get(sym, sym),
+                        "regularMarketPrice": None, "regularMarketChangePercent": 0,
+                        "sparkPrices": [], "prevSparkPrices": []
+                    }
     return results
 
 def read_gist():
@@ -117,22 +141,26 @@ def write_gist(data):
     return r.status_code == 200
 
 def main():
-    now = datetime.datetime.now(TW)
-    h = now.hour
+    now  = datetime.datetime.now(TW)
+    h    = now.hour
     slot = "08:00" if h < 10 else "12:00" if h < 14 else "17:00"
-    ts = now.strftime("%Y-%m-%d %H:%M")
+    ts   = now.strftime("%Y-%m-%d %H:%M")
     print(f"=== MarketPulse {ts} CST ({slot}) ===")
 
-    print("\n[1] 抓取所有標的（yfinance）...")
-    all_data = fetch_all_yfinance(ALL_SYMBOLS)
+    print("\n[1] 抓取所有標的...")
+    all_data = fetch_all(ALL_SYMBOLS)
 
     tw  = [all_data[s] for s in TW_SYMBOLS  if s in all_data]
     us  = [all_data[s] for s in US_SYMBOLS  if s in all_data]
     etf = [all_data[s] for s in ETF_SYMBOLS if s in all_data]
 
-    print(f"\n  台股: {len([q for q in tw  if q.get('regularMarketPrice')])}/{len(TW_SYMBOLS)} 筆有價格")
-    print(f"  美股: {len([q for q in us  if q.get('regularMarketPrice')])}/{len(US_SYMBOLS)} 筆有價格")
-    print(f"  ETF:  {len([q for q in etf if q.get('regularMarketPrice')])}/{len(ETF_SYMBOLS)} 筆有價格")
+    tw_ok  = len([q for q in tw  if q.get('regularMarketPrice')])
+    us_ok  = len([q for q in us  if q.get('regularMarketPrice')])
+    etf_ok = len([q for q in etf if q.get('regularMarketPrice')])
+    ma_ok  = len([q for q in tw+us if q.get('fiftyDayAverage')])
+    prev_ok= len([q for q in tw+us if q.get('prevSparkPrices')])
+    print(f"\n  台股: {tw_ok}/6  美股: {us_ok}/6  ETF: {etf_ok}/10")
+    print(f"  月均線: {ma_ok}/12  昨日分時: {prev_ok}/12")
 
     snapshot = {"ts": ts, "slot": slot, "tw": tw, "us": us, "etf": etf, "analysis": ""}
 
