@@ -10,7 +10,7 @@
 :root{
   --bg:#090d14;--bg2:#10151f;--bg3:#161c28;--bg4:#1c2333;--bg5:#222a3a;
   --b:rgba(255,255,255,.06);--b2:rgba(255,255,255,.11);
-  --t:#dde2ee;--t2:#7d8494;--t3:#4a5060;
+  --t:#dde2ee;--t2:#c8ceda;--t3:#9098aa;
   --g:#1fd97a;--gd:rgba(31,217,122,.12);
   --r:#f04f4f;--rd:rgba(240,79,79,.12);
   --y:#f0c040;--yd:rgba(240,192,64,.1);
@@ -47,7 +47,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:var(--bg);color:var(--t);f
 .mc{background:var(--bg2);border:1px solid var(--b);border-radius:9px;padding:9px 12px;}
 .mc .l{font-size:10px;color:var(--t3);margin-bottom:3px;}.mc .v{font-size:16px;font-weight:700;font-family:'JetBrains Mono',monospace;}.mc .c{font-size:11px;font-family:'JetBrains Mono',monospace;margin-top:1px;}
 .sh{display:flex;align-items:center;justify-content:space-between;margin:12px 0 7px;}
-.sl{font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:1.5px;}
+.sl{font-size:10px;color:#9098aa;text-transform:uppercase;letter-spacing:1.5px;}
 .tw{background:var(--bg2);border:1px solid var(--b);border-radius:11px;overflow:hidden;margin-bottom:11px;}
 table{width:100%;border-collapse:collapse;}
 thead th{font-size:10px;color:var(--t3);font-weight:400;padding:7px 10px;text-align:right;border-bottom:1px solid var(--b);white-space:nowrap;background:var(--bg3);}
@@ -76,7 +76,7 @@ tbody tr:last-child td{border-bottom:none;}tbody tr{cursor:pointer;transition:ba
 .csm{background:var(--bg4);border:1px solid var(--b2);border-radius:6px;padding:3px 8px;color:var(--t2);cursor:pointer;font-size:12px;}
 .sbs{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:12px;}
 .sb{background:var(--bg3);border-radius:6px;padding:8px 11px;}.sb .l{font-size:10px;color:var(--t3);margin-bottom:2px;}.sb .v{font-size:14px;font-weight:700;font-family:'JetBrains Mono',monospace;}
-.ht{font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:6px;}
+.ht{font-size:10px;color:#9098aa;text-transform:uppercase;letter-spacing:1.2px;margin-bottom:6px;}
 .hl{display:flex;flex-direction:column;gap:3px;}
 .hr{display:flex;align-items:center;gap:6px;padding:4px 8px;background:var(--bg3);border-radius:5px;}
 .hrn{font-size:10px;color:var(--t3);width:13px;font-family:'JetBrains Mono',monospace;}.hnam{flex:1;font-size:12px;}
@@ -122,12 +122,12 @@ tbody tr:last-child td{border-bottom:none;}tbody tr{cursor:pointer;transition:ba
 .str{display:grid;grid-template-columns:repeat(6,1fr);background:var(--b);gap:1px;border-bottom:1px solid var(--b);flex-shrink:0;}
 .sc2{background:var(--bg2);padding:8px 10px;text-align:center;}.sc2 .l{font-size:10px;color:var(--t3);margin-bottom:2px;}.sc2 .v{font-size:12px;font-weight:600;font-family:'JetBrains Mono',monospace;}
 .mbd{padding:14px 17px;display:flex;flex-direction:column;gap:13px;}
-.msl{font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:1.3px;margin-bottom:6px;display:flex;align-items:center;gap:6px;}
+.msl{font-size:10px;color:#9098aa;text-transform:uppercase;letter-spacing:1.3px;margin-bottom:6px;display:flex;align-items:center;gap:6px;}
 .msl::after{content:'';flex:1;height:1px;background:var(--b);}
 .cca{background:var(--bg3);border:1px solid var(--b);border-radius:9px;padding:10px 12px;}
 .pg2{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
 .pca{background:var(--bg3);border:1px solid var(--b);border-radius:9px;padding:11px;}
-.ptt{font-size:11px;color:var(--t2);margin-bottom:8px;display:flex;align-items:center;gap:5px;}
+.ptt{font-size:11px;color:#c8ceda;margin-bottom:8px;display:flex;align-items:center;gap:5px;}
 .pdo{width:7px;height:7px;border-radius:50%;}
 .plv{display:flex;flex-direction:column;gap:5px;}
 .prow{display:flex;align-items:center;gap:5px;}
@@ -145,7 +145,7 @@ tbody tr:last-child td{border-bottom:none;}tbody tr{cursor:pointer;transition:ba
 .itt th{font-size:10px;color:var(--t3);font-weight:400;padding:4px 6px;text-align:right;border-bottom:1px solid var(--b);}
 .itt th:first-child{text-align:left;}
 .itt td{padding:5px 6px;font-size:11px;font-family:'JetBrains Mono',monospace;text-align:right;border-bottom:1px solid rgba(255,255,255,.03);}
-.itt td:first-child{text-align:left;font-family:'Noto Sans TC',sans-serif;color:var(--t2);}
+.itt td:first-child{text-align:left;font-family:'Noto Sans TC',sans-serif;color:#c8ceda;}
 .itot{background:rgba(255,255,255,.02);}
 .toast{position:fixed;bottom:18px;right:18px;background:var(--bg4);border:1px solid var(--b2);border-radius:9px;padding:9px 15px;font-size:12px;color:var(--t);z-index:999;transition:opacity .3s;}
 .toast.hide{opacity:0;pointer-events:none;}
@@ -630,11 +630,11 @@ function openM(symbol,nameArg){
   const asks=[p+sp*5,p+sp*4,p+sp*3,p+sp*2,p+sp].map(v=>({p:v.toFixed(isTW?1:2),q:Math.floor(Math.random()*5000+1000)}));
   const bids=[p-sp,p-sp*2,p-sp*3,p-sp*4,p-sp*5].map(v=>({p:v.toFixed(isTW?1:2),q:Math.floor(Math.random()*5000+1000)}));
   document.getElementById('m-ob').innerHTML=
-    `<tr><td colspan="2" style="font-size:10px;color:var(--t3);padding:3px 6px;border-bottom:1px solid var(--b)">委賣（Ask）</td><td style="font-size:10px;color:var(--t3);text-align:right;padding:3px 6px;border-bottom:1px solid var(--b)">張</td></tr>`+
-    [...asks].reverse().map(a=>`<tr><td></td><td class="ac">${a.p}</td><td class="ac" style="text-align:right">${a.q}</td></tr>`).join('')+
-    `<tr><td colspan="3" class="omd ${up?'up':'dn'}">${pf} ${up?'▲':'▼'} ${Math.abs(chg).toFixed(isTW?1:2)}</td></tr>`+
-    bids.map(b=>`<tr><td class="bc" style="text-align:right">${b.q}</td><td class="bc">${b.p}</td><td></td></tr>`).join('')+
-    `<tr><td colspan="2" style="font-size:10px;color:var(--t3);padding:3px 6px;border-top:1px solid var(--b)">委買（Bid）</td><td></td></tr>`;
+    `<tr style="background:var(--bg4)"><td colspan="2" style="font-size:10px;color:var(--t2);padding:4px 8px;letter-spacing:.5px">委賣 Ask</td><td style="font-size:10px;color:var(--t2);text-align:right;padding:4px 8px">張數</td></tr>`+
+    [...asks].reverse().map((a,i)=>`<tr><td style="width:8px;padding:3px 2px"><div style="height:3px;background:var(--r);opacity:${0.3+i*0.15};border-radius:1px"></div></td><td class="ac" style="padding:4px 8px;font-size:12px">${a.p}</td><td class="ac" style="text-align:right;padding:4px 8px;font-size:12px">${a.q.toLocaleString()}</td></tr>`).join('')+
+    `<tr style="background:rgba(255,255,255,.04)"><td colspan="3" class="omd ${up?'up':'dn'}" style="padding:6px 8px;font-size:13px;font-weight:700;text-align:center">${pf} ${up?'▲':'▼'} ${Math.abs(chg).toFixed(isTW?1:2)}</td></tr>`+
+    bids.map((b,i)=>`<tr><td style="width:8px;padding:3px 2px"><div style="height:3px;background:var(--g);opacity:${0.3+i*0.15};border-radius:1px"></div></td><td class="bc" style="padding:4px 8px;font-size:12px">${b.p}</td><td class="bc" style="text-align:right;padding:4px 8px;font-size:12px">${b.q.toLocaleString()}</td></tr>`).join('')+
+    `<tr style="background:var(--bg4)"><td colspan="2" style="font-size:10px;color:var(--t2);padding:4px 8px;letter-spacing:.5px">委買 Bid</td><td style="font-size:10px;color:var(--t2);text-align:right;padding:4px 8px">張數</td></tr>`;
 
   // Institution
   const inst=m.inst||[];
@@ -667,9 +667,19 @@ function drawChart(prices,up,prevClose,ma20){
   if(!prices.length)return;
   const ctx=document.getElementById('m-chart').getContext('2d');
   const col=up?'#1fd97a':'#f04f4f';
+  // Generate time labels: Taiwan market 09:00-13:30 = 270 min, US 21:30-04:00
   const n=prices.length;
-  const prevData=prevClose?prices.map(()=>prevClose):null;
-  const ma20Data=(ma20&&ma20>0)?prices.map(()=>ma20):null;
+  const isTWStock=typeof prices[0]==='number'&&prices[0]>50;
+  // Build time labels at 5-min intervals from 09:00
+  const labels=prices.map((_,i)=>{
+    const totalMin=i*5;
+    const h=Math.floor((9*60+totalMin)/60);
+    const m=(9*60+totalMin)%60;
+    if(m===0||i===0||i===n-1) return pad(h)+':'+pad(m);
+    return '';
+  });
+  const prevData=prevClose&&prevClose>0?prices.map(()=>prevClose):null;
+  const ma20Data=ma20&&ma20>0?prices.map(()=>ma20):null;
   const allVals=[...prices,...(prevData||[]),...(ma20Data||[])].filter(Boolean);
   const mn=Math.min(...allVals)*.9982,mx=Math.max(...allVals)*1.0018;
   const datasets=[{
@@ -677,15 +687,23 @@ function drawChart(prices,up,prevClose,ma20){
     backgroundColor:ctx2=>{const g=ctx2.chart.ctx.createLinearGradient(0,0,0,110);g.addColorStop(0,up?'rgba(31,217,122,.18)':'rgba(240,79,79,.18)');g.addColorStop(1,up?'rgba(31,217,122,0)':'rgba(240,79,79,0)');return g;},
     tension:.35,pointRadius:0,pointHoverRadius:4,pointHoverBackgroundColor:col,label:'今日'
   }];
-  if(prevData) datasets.push({data:prevData,borderColor:'#f0a040',borderWidth:1.5,borderDash:[6,4],fill:false,tension:0,pointRadius:0,label:'前日收盤'});
-  if(ma20Data) datasets.push({data:ma20Data,borderColor:'#9b7dfa',borderWidth:1.5,borderDash:[3,3],fill:false,tension:0,pointRadius:0,label:'月均線MA20'});
-  mChart=new Chart(ctx,{type:'line',data:{labels:prices.map((_,i)=>i),datasets},
+  if(prevData) datasets.push({data:prevData,borderColor:'#f0a040',borderWidth:1.5,borderDash:[6,4],fill:false,tension:0,pointRadius:0,label:'前日'+prevClose.toFixed(prevClose>100?0:2)});
+  if(ma20Data) datasets.push({data:ma20Data,borderColor:'#9b7dfa',borderWidth:1.5,borderDash:[3,3],fill:false,tension:0,pointRadius:0,label:'MA20 '+ma20.toFixed(ma20>100?0:2)});
+  mChart=new Chart(ctx,{type:'line',data:{labels,datasets},
     options:{responsive:true,maintainAspectRatio:false,
       plugins:{
-        legend:{display:true,position:'top',labels:{color:'#b8bece',font:{size:10,family:"'JetBrains Mono',monospace"},boxWidth:20,padding:8}},
-        tooltip:{mode:'index',intersect:false,backgroundColor:'#1c2333',borderColor:'rgba(255,255,255,.1)',borderWidth:1,titleColor:'#7d8494',bodyColor:'#dde2ee',callbacks:{label:c=>' '+c.raw}}
+        legend:{display:true,position:'top',align:'end',labels:{color:'#c8ceda',font:{size:10,family:"'JetBrains Mono',monospace"},boxWidth:24,boxHeight:2,padding:10,usePointStyle:false}},
+        tooltip:{mode:'index',intersect:false,backgroundColor:'#1c2333',borderColor:'rgba(255,255,255,.15)',borderWidth:1,titleColor:'#c8ceda',bodyColor:'#e8eaf0',padding:8,
+          callbacks:{
+            title:items=>{const lbl=labels[items[0]?.dataIndex]||'';return lbl||'';},
+            label:c=>{const v=c.raw;if(typeof v!=='number')return'';return c.dataset.label.split(' ')[0]+': '+(v>1000?v.toLocaleString():v.toFixed(2));}
+          }
+        }
       },
-      scales:{x:{display:false},y:{position:'right',min:mn,max:mx,grid:{color:'rgba(255,255,255,.04)',drawTicks:false},ticks:{color:'#4a5060',font:{size:9,family:"'JetBrains Mono',monospace"},maxTicksLimit:4,callback:v=>typeof v==='number'?v.toFixed(v>1000?0:2):v}}},
+      scales:{
+        x:{display:true,grid:{display:false},ticks:{color:'#6b7385',font:{size:9,family:"'JetBrains Mono',monospace"},maxRotation:0,autoSkip:true,maxTicksLimit:7}},
+        y:{position:'right',min:mn,max:mx,grid:{color:'rgba(255,255,255,.04)',drawTicks:false},ticks:{color:'#7a8195',font:{size:9,family:"'JetBrains Mono',monospace"},maxTicksLimit:5,callback:v=>typeof v==='number'?(v>1000?v.toLocaleString():v.toFixed(2)):v}}
+      },
       animation:{duration:500},interaction:{mode:'index',intersect:false}}
   });
 }
@@ -726,8 +744,11 @@ async function genMktAI(tw,us){
   p.innerHTML=aiPanelHTML(`AI 大盤總結（${curSlot} 分析）`,thinkHTML());
   const tc=tw.slice(0,4).map(q=>`${META[q.symbol]?.n||q.shortName}: ${q.regularMarketPrice?.toFixed(1)} (${q.regularMarketChangePercent>=0?'+':''}${q.regularMarketChangePercent?.toFixed(2)}%)`).join('，');
   const uc=us.slice(0,4).map(q=>`${q.symbol}: $${q.regularMarketPrice?.toFixed(2)} (${q.regularMarketChangePercent>=0?'+':''}${q.regularMarketChangePercent?.toFixed(2)}%)`).join('，');
-  const t=await callAI(`你是台股分析師。用繁體中文200字以內做今日盤後總結：台股：${tc}。美股：${uc}。加權指數大漲0.81%，外資買超182億。分析：(1)今日最強弱個股，(2)主要驅動因子，(3)明日操作重點。語氣直接。`).catch(()=>'（需填入 API Key）');
-  p.querySelector('.abod').innerHTML=`<div style="line-height:1.85">${t.replace(/\n/g,'<br>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')}</div>`;
+  let t;
+  try{ t=await callAI('你是台股分析師。用繁體中文200字以內做今日盤後總結。台股：'+tc+'。美股：'+uc+'。加權指數今日漲跌，外資買賣狀況。分析：(1)今日最強弱個股，(2)主要驅動因子，(3)明日操作重點。語氣直接。'); }
+  catch(e){ t=getKey()?'Claude 呼叫失敗（'+e.message+'）':'請在右上角填入 Claude API Key'; }
+  const ab=p.querySelector('.abod');
+  if(ab){var h=fmtAI(t);ab.innerHTML='<div style="line-height:1.85;color:var(--t)">'+h+'</div>';}
 }
 
 // ── GIST STORAGE ──
