@@ -49,6 +49,13 @@ def fetch_all_yfinance(symbols):
                         prev_close = prev_close or closes[-2]
                     if len(closes) >= 10:
                         ma50 = sum(closes[-20:]) / min(len(closes), 20)
+                # Try to get 50-day MA from info
+                try:
+                    info = t.info
+                    if info.get('fiftyDayAverage'):
+                        ma50 = info['fiftyDayAverage']
+                except:
+                    pass
                 
                 # Get today's intraday spark
                 try:
