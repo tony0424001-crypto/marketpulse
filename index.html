@@ -579,6 +579,53 @@ function openED(i){
     `<div class="hr"><div class="hrn">${i+1}</div><div class="hnam">${h.n}</div>
 <div class="hbg"><div class="hbr" style="width:${Math.min(h.w*2,100)}%"></div></div>
 <div class="hwt">${h.w}%</div></div>`).join('');
+  // ETF mini chart
+  const etfQ=etfD.find(s=>s.symbol===sym)||{};
+  const etfSpark=etfQ.sparkPrices||[];
+  const etfPrev=etfQ.prevSparkPrices||[];
+  const etfPrevClose=etfQ.regularMarketPreviousClose||null;
+  const etfMA20=etfQ.fiftyDayAverage||null;
+  const etfUp=(etfQ.regularMarketChangePercent||0)>=0;
+  
+  // Add chart card if not exists
+  let etfChartWrap=document.getElementById('etf-chart-wrap');
+  if(!etfChartWrap){
+    etfChartWrap=document.createElement('div');
+    etfChartWrap.id='etf-chart-wrap';
+    etfChartWrap.style='margin-bottom:12px';
+    etfChartWrap.innerHTML='<div style="font-size:10px;color:#9098aa;text-transform:uppercase;letter-spacing:1.2px;margin-bottom:6px">今日分時走勢</div><div class="cca"><canvas id="etf-chart" height="90"></canvas></div>';
+    const det=document.getElementById('edet');
+    const hlEl=det.querySelector('.ht');
+    det.insertBefore(etfChartWrap, hlEl);
+  }
+  // Draw ETF chart
+  if(etfSpark.length>0){
+    if(window.etfChart){window.etfChart.destroy();window.etfChart=null;}
+    const ectx=document.getElementById('etf-chart').getContext('2d');
+    const ecol=etfUp?'#1fd97a':'#f04f4f';
+    const en=etfSpark.length;
+    const elabels=etfSpark.map((_,i)=>{const tm=i*5,eh=Math.floor((9*60+tm)/60),em=(9*60+tm)%60;return(em===0)?pad(eh)+':00':'';});
+    const eallVals=[...etfSpark,...(etfPrev.length?etfPrev:[]),...(etfMA20?[etfMA20]:[])].filter(Boolean);
+    const emn=Math.min(...eallVals)*.9982,emx=Math.max(...eallVals)*1.0018;
+    const eds=[{data:etfSpark,borderColor:ecol,borderWidth:1.5,fill:true,
+      backgroundColor:ec=>{const g=ec.chart.ctx.createLinearGradient(0,0,0,90);g.addColorStop(0,etfUp?'rgba(31,217,122,.15)':'rgba(240,79,79,.15)');g.addColorStop(1,'rgba(0,0,0,0)');return g;},
+      tension:.35,pointRadius:0,label:'今日'}];
+    if(etfPrev.length) eds.push({data:etfPrev.slice(0,en),borderColor:'#00d4ff',borderWidth:1,borderDash:[],fill:false,tension:.3,pointRadius:0,label:'前日'});
+    if(etfMA20) eds.push({data:etfSpark.map(()=>etfMA20),borderColor:'#f0c040',borderWidth:1,borderDash:[4,3],fill:false,tension:0,pointRadius:0,label:'MA20'});
+    window.etfChart=new Chart(ectx,{type:'line',data:{labels:elabels,datasets:eds},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:true,position:'top',align:'end',labels:{color:'#c8ceda',font:{size:9},boxWidth:18,boxHeight:2,padding:8}},
+          tooltip:{mode:'index',intersect:false,backgroundColor:'#1a2030',borderColor:'rgba(255,255,255,.1)',borderWidth:1,callbacks:{
+            title:items=>{const i=items[0]?.dataIndex||0;const tm=i*5;const eh=Math.floor((9*60+tm)/60);const em=(9*60+tm)%60;return pad(eh)+':'+pad(em);},
+            label:ec2=>{const v=ec2.raw;return typeof v==='number'?' '+ec2.dataset.label+': '+(v>=100?v.toLocaleString('zh-TW',{maximumFractionDigits:1}):v.toFixed(2)):'';}
+          }}},
+        scales:{x:{display:true,grid:{display:false},ticks:{color:'#6b7385',font:{size:8},maxRotation:0,autoSkip:false,callback:(v,i)=>elabels[i]||null}},
+          y:{position:'right',min:emn,max:emx,grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#7a8195',font:{size:8},maxTicksLimit:4,callback:v=>v>=100?v.toLocaleString('zh-TW',{maximumFractionDigits:0}):v.toFixed(2)}}},
+        animation:{duration:400},interaction:{mode:'index',intersect:false}}});
+  }else{
+    const w=document.getElementById('etf-chart-wrap');if(w)w.style.display='none';
+  }
+  
   document.getElementById('etf-ait').textContent=`AI Agent 分析 — ${sym.replace('.TW','')} ${m.n}`;
   const ab=document.getElementById('etf-aib');
   ab.innerHTML=thinkHTML();
@@ -701,11 +748,11 @@ function drawChart(prices,up,prevClose,ma20,prevPrices){
     tension:.35,pointRadius:0,pointHoverRadius:4,pointHoverBackgroundColor:col,label:'今日'
   }];
   if(prevData) datasets.push({
-    data:prevData,borderColor:'#f0a040',borderWidth:1.5,
+    data:prevData,borderColor:'#00d4ff',borderWidth:1.5,
     borderDash:(prevPrices&&prevPrices.length>0)?[]:[6,4],
     fill:false,tension:.3,pointRadius:0,label:'前日'
   });
-  if(ma20Data) datasets.push({data:ma20Data,borderColor:'#9b7dfa',borderWidth:1.5,borderDash:[4,3],fill:false,tension:0,pointRadius:0,label:'MA20'});
+  if(ma20Data) datasets.push({data:ma20Data,borderColor:'#f0c040',borderWidth:1.5,borderDash:[4,3],fill:false,tension:0,pointRadius:0,label:'MA20'});
   mChart=new Chart(ctx,{type:'line',data:{labels,datasets},
     options:{responsive:true,maintainAspectRatio:false,
       plugins:{
@@ -729,11 +776,14 @@ function drawChart(prices,up,prevClose,ma20,prevPrices){
         }
       },
       scales:{
-        x:{display:true,grid:{color:'rgba(255,255,255,.03)',drawTicks:false},
+        x:{display:true,
+          grid:{color:'rgba(255,255,255,.04)',drawTicks:false},
           ticks:{color:'#7a8195',font:{size:9,family:"'JetBrains Mono',monospace"},maxRotation:0,autoSkip:false,
             callback:(v,i)=>labels[i]||null}},
-        y:{position:'right',min:mn,max:mx,grid:{color:'rgba(255,255,255,.04)',drawTicks:false},
-          ticks:{color:'#7a8195',font:{size:9,family:"'JetBrains Mono',monospace"},maxTicksLimit:5,
+        y:{position:'right',min:mn,max:mx,
+          grid:{color:'rgba(255,255,255,.05)',drawTicks:true,tickLength:4},
+          border:{dash:[3,3],color:'rgba(255,255,255,.08)'},
+          ticks:{color:'#9098aa',font:{size:9,family:"'JetBrains Mono',monospace"},maxTicksLimit:6,
             callback:v=>typeof v==='number'?(v>=1000?v.toLocaleString('zh-TW',{maximumFractionDigits:0}):v.toFixed(2)):v}}
       },
       animation:{duration:500},interaction:{mode:'index',intersect:false}}
