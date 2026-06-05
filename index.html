@@ -251,7 +251,7 @@ tbody tr:last-child td{border-bottom:none;}tbody tr{cursor:pointer;transition:ba
   <div class="mbd">
     <div>
       <div class="msl">今日分時走勢</div>
-      <div class="cca"><canvas id="m-chart" height="160"></canvas></div>
+      <div class="cca"><canvas id="m-chart" height="220"></canvas></div>
     </div>
     <div>
       <div class="msl">壓力 / 支撐分析</div>
@@ -593,7 +593,7 @@ function openED(i){
     etfChartWrap=document.createElement('div');
     etfChartWrap.id='etf-chart-wrap';
     etfChartWrap.style='margin-bottom:12px';
-    etfChartWrap.innerHTML='<div style="font-size:10px;color:#9098aa;text-transform:uppercase;letter-spacing:1.2px;margin-bottom:6px">今日分時走勢</div><div class="cca"><canvas id="etf-chart" height="90"></canvas></div>';
+    etfChartWrap.innerHTML='<div style="font-size:10px;color:#9098aa;text-transform:uppercase;letter-spacing:1.2px;margin-bottom:6px">今日分時走勢</div><div class="cca"><canvas id="etf-chart" height="160"></canvas></div>';
     const det=document.getElementById('edet');
     const hlEl=det.querySelector('.ht');
     det.insertBefore(etfChartWrap, hlEl);
@@ -606,7 +606,10 @@ function openED(i){
     const en=etfSpark.length;
     const elabels=etfSpark.map((_,i)=>{const tm=i*5,eh=Math.floor((9*60+tm)/60),em=(9*60+tm)%60;return(em===0)?pad(eh)+':00':'';});
     const eallVals=[...etfSpark,...(etfPrev.length?etfPrev:[]),...(etfMA20?[etfMA20]:[])].filter(Boolean);
-    const emn=Math.min(...eallVals)*.9982,emx=Math.max(...eallVals)*1.0018;
+    const epMin=Math.min(...eallVals),epMax=Math.max(...eallVals);
+    const epRange=Math.max(epMax-epMin,epMax*0.015);
+    const epMid=(epMax+epMin)/2;
+    const emn=epMid-epRange*.65,emx=epMid+epRange*.65;
     const eds=[{data:etfSpark,borderColor:ecol,borderWidth:1.5,fill:true,
       backgroundColor:ec=>{const g=ec.chart.ctx.createLinearGradient(0,0,0,90);g.addColorStop(0,etfUp?'rgba(31,217,122,.15)':'rgba(240,79,79,.15)');g.addColorStop(1,'rgba(0,0,0,0)');return g;},
       tension:.35,pointRadius:0,label:'今日'}];
@@ -737,7 +740,11 @@ function drawChart(prices,up,prevClose,ma20,prevPrices,volumes){
   const allVals=[...prices,...(prevData||[]),...(ma20Data||[])].filter(v=>v&&!isNaN(v));
   const priceMin=Math.min(...allVals),priceMax=Math.max(...allVals);
   const priceRange=priceMax-priceMin;
-  const mn=priceMin-priceRange*.05,mx=priceMax+priceRange*.05;
+  // If range is tiny (< 0.5%), force minimum visible range of 1.5%
+  const minRange=priceMax*0.015;
+  const effectiveRange=Math.max(priceRange,minRange);
+  const mid=(priceMax+priceMin)/2;
+  const mn=mid-effectiveRange*.65,mx=mid+effectiveRange*.65;
 
   const col=up?'#1fd97a':'#f04f4f';
 
@@ -750,7 +757,8 @@ function drawChart(prices,up,prevClose,ma20,prevPrices,volumes){
       data:prices,borderColor:col,borderWidth:2,fill:true,
       backgroundColor:ctx2=>{
         const g=ctx2.chart.ctx.createLinearGradient(0,0,0,160);
-        g.addColorStop(0,up?'rgba(31,217,122,.2)':'rgba(240,79,79,.2)');
+        g.addColorStop(0,up?'rgba(31,217,122,.35)':'rgba(240,79,79,.35)');
+        g.addColorStop(0.6,up?'rgba(31,217,122,.08)':'rgba(240,79,79,.08)');
         g.addColorStop(1,'rgba(0,0,0,0)');return g;
       },
       tension:.3,pointRadius:0,pointHoverRadius:5,
@@ -786,7 +794,7 @@ function drawChart(prices,up,prevClose,ma20,prevPrices,volumes){
       grid:{color:'rgba(255,255,255,.06)',drawTicks:true,tickLength:3},
       border:{dash:[2,3],color:'rgba(255,255,255,.1)'},
       ticks:{color:'#9098aa',font:{size:9,family:"'JetBrains Mono',monospace"},
-        maxTicksLimit:6,
+        maxTicksLimit:8,
         callback:v=>typeof v==='number'?(v>=1000?v.toLocaleString('zh-TW',{maximumFractionDigits:0}):v.toFixed(2)):v}
     }
   };
