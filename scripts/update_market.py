@@ -65,9 +65,19 @@ def fetch_news(slot):
                 # Clean CDATA
                 title = title.replace('<![CDATA[','').replace(']]>','').strip()
                 if title and len(title) > 10:
+                    # Try to get URL
+                    url = (item.findtext('link') or
+                           item.findtext('{http://www.w3.org/2005/Atom}link') or '')
+                    # Handle link as element with href attribute
+                    if not url:
+                        link_el = item.find('link')
+                        if link_el is not None:
+                            url = link_el.get('href','') or link_el.text or ''
+                    url = url.strip() if url else ''
                     news.append({
                         "source": source_name,
                         "title": title[:120],
+                        "url": url[:300] if url.startswith('http') else '',
                         "time": datetime.datetime.now(TW).strftime("%H:%M"),
                         "slot": slot
                     })
