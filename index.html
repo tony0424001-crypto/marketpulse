@@ -251,7 +251,7 @@ tbody tr:last-child td{border-bottom:none;}tbody tr{cursor:pointer;transition:ba
   <div class="mbd">
     <div>
       <div class="msl">今日分時走勢</div>
-      <div class="cca"><canvas id="m-chart" height="110"></canvas></div>
+      <div class="cca"><canvas id="m-chart" height="160"></canvas></div>
     </div>
     <div>
       <div class="msl">壓力 / 支撐分析</div>
@@ -292,7 +292,7 @@ const ETFS=['0050.TW','0056.TW','00878.TW','00919.TW','006208.TW','00881.TW','00
 // ── STATE ──
 let SD={tw:[],us:[]},etfD=[],hist=JSON.parse(localStorage.getItem('mph')||'[]');
 let curSlot='08:00',mChart=null,clkT=null,nf='全部';
-let autoRefreshTimer=null,scheduleTimer=null,lastScheduledSlot='';
+let autoRefreshTimer=null,scheduleTimer=null,lastScheduledSlot='',chartRefreshTimer=null,currentModalSym=null;
 // Gist cache
 let gistCache={snapshots:[],news:[],lastUpdated:'',slots:{}};
 
@@ -690,7 +690,8 @@ function openM(symbol,nameArg){
     inst.map(i=>`<tr class="${i.b?'itot':''}"><td>${i.n}</td><td class="${i.u?'up':'dn'}">${i.v}</td><td style="font-size:10px">${i.u?'偏多':'⚠️ 出逃'}</td></tr>`).join('');
 
   // Chart
-  drawChart(q.sparkPrices||[],up,q.regularMarketPreviousClose||null,q.fiftyDayAverage||null,q.prevSparkPrices||null);
+  currentModalSym=symbol;
+  drawChart(q.sparkPrices||[],up,q.regularMarketPreviousClose||null,q.fiftyDayAverage||null,q.prevSparkPrices||null,q.sparkVolumes||null);
 
   // AI analysis via real Claude API
   document.getElementById('m-ait').textContent=`${symbol.replace('.TW','')} ${name} — AI 深度分析`;
@@ -710,87 +711,178 @@ function openM(symbol,nameArg){
   document.getElementById('mb').scrollTop=0;
 }
 
-function drawChart(prices,up,prevClose,ma20,prevPrices){
+function drawChart(prices,up,prevClose,ma20,prevPrices,volumes){
   if(mChart){mChart.destroy();mChart=null;}
   if(!prices.length)return;
-  const ctx=document.getElementById('m-chart').getContext('2d');
-  const col=up?'#1fd97a':'#f04f4f';
+  
+  // Build time labels 09:00 start, 5-min intervals
   const n=prices.length;
-  // Time labels: 09:00 start, 5-min intervals, only show whole hours
   const labels=prices.map((_,i)=>{
-    const totalMin=i*5;
-    const h=Math.floor((9*60+totalMin)/60);
-    const m=(9*60+totalMin)%60;
-    return (m===0)?pad(h)+':00':'';
+    const tm=i*5,h=Math.floor((9*60+tm)/60),m=(9*60+tm)%60;
+    return(m===0)?pad(h)+':00':'';
   });
-  // MA20: flat line at ma20 value
-  const ma20Data=ma20&&ma20>0?prices.map(()=>ma20):null;
-  // prevPrices: real previous day spark - align to same length as today
+
+  // Prev day alignment
   let prevData=null;
   if(prevPrices&&prevPrices.length>0){
-    // Align prev day data to same number of points as today
-    if(prevPrices.length>=n){
-      prevData=prevPrices.slice(0,n);
-    } else {
-      // Pad with last value if prev has fewer points
-      const last=prevPrices[prevPrices.length-1];
-      prevData=[...prevPrices,...Array(n-prevPrices.length).fill(last)];
-    }
-  } else if(prevClose&&prevClose>0){
-    // Fallback: flat line if no prev spark
+    prevData=prevPrices.length>=n?prevPrices.slice(0,n):[...prevPrices,...Array(n-prevPrices.length).fill(prevPrices[prevPrices.length-1])];
+  }else if(prevClose&&prevClose>0){
     prevData=prices.map(()=>prevClose);
   }
+
+  // MA20 flat line
+  const ma20Data=ma20&&ma20>0?prices.map(()=>ma20):null;
+
+  // Price range for Y axis
   const allVals=[...prices,...(prevData||[]),...(ma20Data||[])].filter(v=>v&&!isNaN(v));
-  const mn=Math.min(...allVals)*.9982,mx=Math.max(...allVals)*1.0018;
-  const datasets=[{
-    data:prices,borderColor:col,borderWidth:2,fill:true,
-    backgroundColor:ctx2=>{const g=ctx2.chart.ctx.createLinearGradient(0,0,0,110);g.addColorStop(0,up?'rgba(31,217,122,.18)':'rgba(240,79,79,.18)');g.addColorStop(1,up?'rgba(31,217,122,0)':'rgba(240,79,79,0)');return g;},
-    tension:.35,pointRadius:0,pointHoverRadius:4,pointHoverBackgroundColor:col,label:'今日'
-  }];
+  const priceMin=Math.min(...allVals),priceMax=Math.max(...allVals);
+  const priceRange=priceMax-priceMin;
+  const mn=priceMin-priceRange*.05,mx=priceMax+priceRange*.05;
+
+  const col=up?'#1fd97a':'#f04f4f';
+
+  // Volume bars - normalize to fit in bottom 20% of chart
+  const volData=volumes&&volumes.length>0?volumes.slice(0,n):null;
+
+  const datasets=[
+    // Today price line
+    {
+      data:prices,borderColor:col,borderWidth:2,fill:true,
+      backgroundColor:ctx2=>{
+        const g=ctx2.chart.ctx.createLinearGradient(0,0,0,160);
+        g.addColorStop(0,up?'rgba(31,217,122,.2)':'rgba(240,79,79,.2)');
+        g.addColorStop(1,'rgba(0,0,0,0)');return g;
+      },
+      tension:.3,pointRadius:0,pointHoverRadius:5,
+      pointHoverBackgroundColor:col,pointHoverBorderColor:'#fff',pointHoverBorderWidth:2,
+      label:'今日',yAxisID:'y'
+    }
+  ];
   if(prevData) datasets.push({
     data:prevData,borderColor:'#00d4ff',borderWidth:1.5,
-    borderDash:(prevPrices&&prevPrices.length>0)?[]:[6,4],
-    fill:false,tension:.3,pointRadius:0,label:'前日'
+    borderDash:prevPrices&&prevPrices.length>0?[]:[5,4],
+    fill:false,tension:.3,pointRadius:0,label:'前日',yAxisID:'y'
   });
-  if(ma20Data) datasets.push({data:ma20Data,borderColor:'#f0c040',borderWidth:1.5,borderDash:[4,3],fill:false,tension:0,pointRadius:0,label:'MA20'});
-  mChart=new Chart(ctx,{type:'line',data:{labels,datasets},
-    options:{responsive:true,maintainAspectRatio:false,
+  if(ma20Data) datasets.push({
+    data:ma20Data,borderColor:'#f0c040',borderWidth:1.5,borderDash:[4,3],
+    fill:false,tension:0,pointRadius:0,label:'MA20',yAxisID:'y'
+  });
+  if(volData) datasets.push({
+    type:'bar',data:volData,
+    backgroundColor:prices.map((p,i)=>i>0?(p>=prices[i-1]?'rgba(31,217,122,.35)':'rgba(240,79,79,.35)'):'rgba(100,100,100,.3)'),
+    borderColor:'transparent',borderWidth:0,
+    label:'成交量',yAxisID:'yVol',order:10
+  });
+
+  const scales={
+    x:{
+      display:true,
+      grid:{color:'rgba(255,255,255,.04)',drawTicks:false},
+      ticks:{color:'#7a8195',font:{size:9,family:"'JetBrains Mono',monospace"},
+        maxRotation:0,autoSkip:false,callback:(v,i)=>labels[i]||null}
+    },
+    y:{
+      position:'right',min:mn,max:mx,
+      grid:{color:'rgba(255,255,255,.06)',drawTicks:true,tickLength:3},
+      border:{dash:[2,3],color:'rgba(255,255,255,.1)'},
+      ticks:{color:'#9098aa',font:{size:9,family:"'JetBrains Mono',monospace"},
+        maxTicksLimit:6,
+        callback:v=>typeof v==='number'?(v>=1000?v.toLocaleString('zh-TW',{maximumFractionDigits:0}):v.toFixed(2)):v}
+    }
+  };
+  if(volData) scales.yVol={
+    display:false,position:'left',
+    min:0,max:Math.max(...volData.filter(Boolean))*4,
+    grid:{display:false}
+  };
+
+  mChart=new Chart(document.getElementById('m-chart').getContext('2d'),{
+    type:'line',
+    data:{labels,datasets},
+    options:{
+      responsive:true,maintainAspectRatio:false,
       plugins:{
-        legend:{display:true,position:'top',align:'end',labels:{color:'#c8ceda',font:{size:10,family:"'JetBrains Mono',monospace"},boxWidth:22,boxHeight:2,padding:12}},
-        tooltip:{mode:'index',intersect:false,backgroundColor:'#1a2030',borderColor:'rgba(255,255,255,.15)',borderWidth:1,titleColor:'#c8ceda',bodyColor:'#e8eaf0',padding:8,
+        legend:{display:true,position:'top',align:'end',
+          labels:{color:'#c8ceda',font:{size:10,family:"'JetBrains Mono',monospace"},
+            boxWidth:20,boxHeight:2,padding:10,
+            filter:item=>item.text!=='成交量'}},
+        tooltip:{
+          mode:'index',intersect:false,
+          backgroundColor:'#1a2030',borderColor:'rgba(255,255,255,.2)',borderWidth:1,
+          titleColor:'#c8ceda',bodyColor:'#e8eaf0',padding:10,
           callbacks:{
             title:items=>{
               const i=items[0]?.dataIndex||0;
-              const totalMin=i*5;
-              const h=Math.floor((9*60+totalMin)/60);
-              const m=(9*60+totalMin)%60;
+              const tm=i*5,h=Math.floor((9*60+tm)/60),m=(9*60+tm)%60;
               return pad(h)+':'+pad(m);
             },
-            label:ctx2=>{
-              const v=ctx2.raw;
+            label:ct=>{
+              if(ct.dataset.label==='成交量') return '';
+              const v=ct.raw;
               if(typeof v!=='number')return'';
-              const lbl=ctx2.dataset.label;
-              return' '+lbl+': '+(v>=1000?v.toLocaleString('zh-TW',{maximumFractionDigits:1}):v.toFixed(2));
+              const disp=v>=1000?v.toLocaleString('zh-TW',{maximumFractionDigits:0}):v.toFixed(2);
+              return' '+ct.dataset.label+': '+disp;
+            },
+            afterBody:items=>{
+              const i=items[0]?.dataIndex||0;
+              if(volData&&volData[i]){
+                const vol=volData[i];
+                return['成交量: '+(vol>=10000?(vol/10000).toFixed(1)+'萬':vol.toLocaleString())+'張'];
+              }
+              return[];
             }
           }
         }
       },
-      scales:{
-        x:{display:true,
-          grid:{color:'rgba(255,255,255,.04)',drawTicks:false},
-          ticks:{color:'#7a8195',font:{size:9,family:"'JetBrains Mono',monospace"},maxRotation:0,autoSkip:false,
-            callback:(v,i)=>labels[i]||null}},
-        y:{position:'right',min:mn,max:mx,
-          grid:{color:'rgba(255,255,255,.05)',drawTicks:true,tickLength:4},
-          border:{dash:[3,3],color:'rgba(255,255,255,.08)'},
-          ticks:{color:'#9098aa',font:{size:9,family:"'JetBrains Mono',monospace"},maxTicksLimit:6,
-            callback:v=>typeof v==='number'?(v>=1000?v.toLocaleString('zh-TW',{maximumFractionDigits:0}):v.toFixed(2)):v}}
-      },
-      animation:{duration:500},interaction:{mode:'index',intersect:false}}
+      scales,
+      animation:{duration:0},// no animation for live update
+      interaction:{mode:'index',intersect:false}
+    }
   });
 }
 
-function closeM(){document.getElementById('ov').classList.remove('on');clearInterval(clkT);}
+// ── Live chart update - append new price point ──
+function updateChartLive(newPrice,newVol){
+  if(!mChart||!currentModalSym)return;
+  const now=new Date();
+  const h=now.getHours(),m=now.getMinutes();
+  // Only during market hours
+  if(!((h>=9&&h<13)||(h===13&&m<30)||(h>=22||h<5)))return;
+  
+  const ds=mChart.data.datasets;
+  const priceDs=ds[0];
+  if(!priceDs)return;
+  
+  const n=priceDs.data.length;
+  const lastIdx=n-1;
+  // Calculate which 5-min bucket this price belongs to
+  const minsSince9=(h-9)*60+m;
+  const bucket=Math.floor(minsSince9/5);
+  
+  if(bucket===lastIdx){
+    // Update last point
+    priceDs.data[lastIdx]=newPrice;
+  }else if(bucket===lastIdx+1){
+    // Add new point
+    priceDs.data.push(newPrice);
+    // Update labels
+    const totalMin=bucket*5;
+    const lh=Math.floor((9*60+totalMin)/60);
+    const lm=(9*60+totalMin)%60;
+    mChart.data.labels.push(lm===0?pad(lh)+':00':'');
+    // Extend prev/ma lines
+    for(let i=1;i<ds.length;i++){
+      if(ds[i].type==='bar')continue;
+      const last=ds[i].data[ds[i].data.length-1];
+      ds[i].data.push(last);
+    }
+    // Add vol bar
+    const volDs=ds.find(d=>d.label==='成交量');
+    if(volDs&&newVol) volDs.data.push(newVol);
+  }
+  mChart.update('none');// no animation
+}
+function closeM(){document.getElementById('ov').classList.remove('on');clearInterval(clkT);clearInterval(chartRefreshTimer);chartRefreshTimer=null;currentModalSym=null;}
 function handleOv(e){if(e.target===document.getElementById('ov'))closeM();}
 
 // ── NEWS ──
@@ -811,8 +903,13 @@ function renderGistNews(news, slot){
   };
   nlist.innerHTML=news.map(n=>{
     const imp=detect(n.title);
-    return`<div class="nit"><div><div class="nsr">${n.source}</div><div class="nim ${impMap[imp]}" style="margin-top:4px">${ilMap[imp]}</div></div><div><div class="ntx">${n.title}</div><div class="ntm">${n.slot||slot} · ${n.time||''}</div></div></div>`;
+    const urlAttr=n.url?`onclick="window.open('${n.url}','_blank')" style="cursor:pointer"`:'';
+    const linkIcon=n.url?' <span style="color:var(--bl);font-size:10px">↗</span>':'';
+    return`<div class="nit" ${urlAttr}><div><div class="nsr">${n.source}</div><div class="nim ${impMap[imp]}" style="margin-top:4px">${ilMap[imp]}</div></div><div><div class="ntx">${n.title}${linkIcon}</div><div class="ntm">${n.slot||slot} · ${n.time||''}</div></div></div>`;
   }).join('');
+  // Update section header with slot label
+  const shEl=document.querySelector('#pg-news .sh .slbl');
+  if(shEl) shEl.textContent=(slotLabels[slot]||'即時情報流')+' · 點擊新聞可開啟原文';
   // Update section header
   const sh=document.querySelector('#pg-news .sh .slbl');
   if(sh) sh.textContent=slotLabels[slot]||'即時情報流';
@@ -957,12 +1054,27 @@ function startAutoRefresh(){
         if(us.length){SD.us=us;renderUS(us);}
         if(tw.length||us.length){
           renderMbar();
-          const n=new Date();
-          document.getElementById('updt').textContent=pad(n.getHours())+':'+pad(n.getMinutes())+':'+pad(n.getSeconds())+' 自動更新';
+          const nn=new Date();
+          document.getElementById('updt').textContent=pad(nn.getHours())+':'+pad(nn.getMinutes())+':'+pad(nn.getSeconds())+' 自動更新';
+          // Update open modal chart if any
+          if(currentModalSym){
+            const allQ=[...tw,...us];
+            const liveQ=allQ.find(s=>s.symbol===currentModalSym);
+            if(liveQ&&liveQ.regularMarketPrice){
+              updateChartLive(liveQ.regularMarketPrice,null);
+              // Update header price
+              const pp=liveQ.regularMarketPrice;
+              const pc=liveQ.regularMarketChangePercent||0;
+              const pf=currentModalSym.endsWith('.TW')?(pp>100?pp.toLocaleString('zh-TW',{maximumFractionDigits:1}):pp.toFixed(2)):'$'+pp.toFixed(2);
+              document.getElementById('m-price').textContent=pf;
+              const chg=liveQ.regularMarketChange||0;
+              document.getElementById('m-chg').textContent=(pc>=0?'▲ ':'▼ ')+Math.abs(chg).toFixed(currentModalSym.endsWith('.TW')?1:2)+' ('+Math.abs(pc).toFixed(2)+'%)';
+            }
+          }
         }
-      }catch(e){} // silent fail - no toast, no demo fallback
+      }catch(e){} // silent fail
     }
-  },30000);
+  },15000); // 15s for live feel
 }
 
 function stopAutoRefresh(){
@@ -1066,7 +1178,13 @@ function sw(name,el){
   document.querySelectorAll('.ntab').forEach(t=>t.classList.remove('on'));
   document.getElementById('pg-'+name).classList.add('on');el.classList.add('on');
   if(name==='history')renderSched();
-  if(name==='news')renderNews();
+  if(name==='news'){
+    // Use Gist real news if available, otherwise static
+    const gistNews=gistCache?.latestNews||gistCache?.snapshots?.[0]?.news||[];
+    const slot=gistCache?.snapshots?.[0]?.slot||'17:00';
+    if(gistNews.length>0) renderGistNews(gistNews,slot);
+    else renderNews();
+  }
 }
 function setSlot(el,s){curSlot=s;document.querySelectorAll('.stab').forEach(t=>t.classList.remove('on'));el.classList.add('on');}
 function updateClock(){const n=new Date(),t=pad(n.getHours())+':'+pad(n.getMinutes())+':'+pad(n.getSeconds());const el=document.getElementById('m-clk');if(el)el.textContent=t;}
