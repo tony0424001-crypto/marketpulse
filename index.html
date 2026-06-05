@@ -422,7 +422,14 @@ async function fetchAll(){
   btn.classList.add('busy');btn.textContent='⟳ 抓取中...';
   toast('正在從 Yahoo Finance 抓取數據...');
   try{
-    const[tw,us]=await Promise.all([fetchQ(TW),fetchQ(US)]);
+    // Try TWSE for TW stocks first
+        const[twseInit,usInit]=await Promise.all([fetchTWSE(TW),fetchQ(US)]);
+        const tw=SD.tw.length>0&&Object.keys(twseInit).length>0
+          ?SD.tw.map(q=>twseInit[q.symbol]?{...q,...twseInit[q.symbol]}:q)
+          :Object.keys(twseInit).length>0
+            ?TW.map(s=>twseInit[s]||{symbol:s,regularMarketPrice:null,sparkPrices:[]})
+            :await fetchQ(TW);
+        const us=usInit;
     SD.tw=tw;SD.us=us;
     renderMbar();renderTW(tw);renderUS(us);
     await fetchETF();saveSnap();toast('✓ 數據更新完成');
@@ -676,10 +683,16 @@ function openM(symbol,nameArg){
 <div class="pca"><div class="ptt"><div class="pdo" style="background:var(--g)"></div>支撐區（買壓）</div>
 <div class="plv">${sup.map(r=>`<div class="prow"><div class="ppr up">${r.p}</div><div class="pbg2"><div class="pbr" style="width:${r.v}%;background:var(--g);opacity:${r.v/100*.7+.3}"></div></div><div class="ppc">${r.v}%</div><div class="plb" style="background:var(--gd);color:var(--g)">${r.l}</div></div>`).join('')}</div></div>`;
 
-  // Order book (simulated)
-  const sp=p*.0005;
-  const asks=[p+sp*5,p+sp*4,p+sp*3,p+sp*2,p+sp].map(v=>({p:v.toFixed(isTW?1:2),q:Math.floor(Math.random()*5000+1000)}));
-  const bids=[p-sp,p-sp*2,p-sp*3,p-sp*4,p-sp*5].map(v=>({p:v.toFixed(isTW?1:2),q:Math.floor(Math.random()*5000+1000)}));
+  // Order book: use TWSE real data if available, else simulate
+  let asks,bids;
+  if(q.twseAsks&&q.twseAsks.length>0){
+    asks=q.twseAsks;
+    bids=q.twseBids||[];
+  }else{
+    const sp=p*.0005;
+    asks=[p+sp*5,p+sp*4,p+sp*3,p+sp*2,p+sp].map(v=>({p:v.toFixed(isTW?1:2),q:Math.floor(Math.random()*5000+1000)}));
+    bids=[p-sp,p-sp*2,p-sp*3,p-sp*4,p-sp*5].map(v=>({p:v.toFixed(isTW?1:2),q:Math.floor(Math.random()*5000+1000)}));
+  }
   document.getElementById('m-ob').innerHTML=
     `<tr style="background:var(--bg4)"><td colspan="2" style="font-size:10px;color:var(--t2);padding:4px 8px;letter-spacing:.5px">委賣 Ask</td><td style="font-size:10px;color:var(--t2);text-align:right;padding:4px 8px">張數</td></tr>`+
     [...asks].reverse().map((a,i)=>`<tr><td style="width:8px;padding:3px 2px"><div style="height:3px;background:var(--r);opacity:${0.3+i*0.15};border-radius:1px"></div></td><td class="ac" style="padding:4px 8px;font-size:12px">${a.p}</td><td class="ac" style="text-align:right;padding:4px 8px;font-size:12px">${a.q.toLocaleString()}</td></tr>`).join('')+
@@ -1057,8 +1070,15 @@ function startAutoRefresh(){
     const isUSMarket=h>=22||h<5;
     if(isTWMarket||isUSMarket){
       try{
-        const[tw,us]=await Promise.all([fetchQ(TW),fetchQ(US)]);
-        if(tw.length){SD.tw=tw;renderTW(tw);}
+        // TW stocks: try TWSE first (more accurate), fallback to Yahoo
+        const[twseData,usData]=await Promise.all([fetchTWSE(TW),fetchQ(US)]);
+        let twData=SD.tw;
+        if(Object.keys(twseData).length>0){
+          // Merge TWSE data with existing SD.tw (keep PE, marketCap etc from Yahoo)
+          twData=SD.tw.map(q=>twseData[q.symbol]?{...q,...twseData[q.symbol]}:q);
+          SD.tw=twData;renderTW(twData);
+        }
+        const us=usData;
         if(us.length){SD.us=us;renderUS(us);}
         if(tw.length||us.length){
           renderMbar();
@@ -1129,6 +1149,76 @@ function startScheduleChecker(){
 
 
 function fmtAI(t){return t.split('\n').join('<br>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>');}
+// ── TWSE 官方 API（台股即時行情，5秒更新）──
+const TWSE_MAP={
+  '2330.TW':'tse_2330.tw','2317.TW':'tse_2317.tw','2449.TW':'tse_2449.tw',
+  '3189.TW':'tse_3189.tw','0050.TW':'tse_0050.tw','0056.TW':'tse_0056.tw',
+  '00878.TW':'tse_00878.tw','00919.TW':'tse_00919.tw','006208.TW':'tse_006208.tw',
+  '00881.TW':'tse_00881.tw','00646.TW':'tse_00646.tw','00929.TW':'tse_00929.tw',
+  '00757.TW':'tse_00757.tw','00900.TW':'tse_00900.tw'
+};
+
+async function fetchTWSE(symbols){
+  // Only handle TW stocks
+  const twSyms=symbols.filter(s=>TWSE_MAP[s]);
+  if(!twSyms.length) return {};
+  
+  const ex_ch=twSyms.map(s=>TWSE_MAP[s]).join('|');
+  const url='https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch='+encodeURIComponent(ex_ch)+'&json=1&delay=0&_='+Date.now();
+  
+  // Try direct first (sometimes works), then corsproxy
+  const proxies=[
+    'https://corsproxy.io/?'+encodeURIComponent(url),
+    'https://api.allorigins.win/get?url='+encodeURIComponent(url)
+  ];
+  
+  for(const proxy of proxies){
+    try{
+      const r=await fetch(proxy,{signal:AbortSignal.timeout(8000)});
+      if(!r.ok) continue;
+      const j=await r.json();
+      const raw=j.contents?JSON.parse(j.contents):j;
+      const arr=raw.msgArray||[];
+      if(!arr.length) continue;
+      
+      const result={};
+      arr.forEach(s=>{
+        const sym=Object.keys(TWSE_MAP).find(k=>TWSE_MAP[k].includes(s.c));
+        if(!sym) return;
+        const price=parseFloat(s.z)||parseFloat(s.y)||0;
+        const prev=parseFloat(s.y)||0;
+        const chg=price-prev;
+        // Parse 5-level orderbook: a=asks prices, b=bids prices, f=asks qty, g=bids qty
+        const askPrices=(s.a||'').split('_').filter(Boolean).map(Number);
+        const bidPrices=(s.b||'').split('_').filter(Boolean).map(Number);
+        const askQtys=(s.f||'').split('_').filter(Boolean).map(Number);
+        const bidQtys=(s.g||'').split('_').filter(Boolean).map(Number);
+        result[sym]={
+          symbol:sym,
+          shortName:s.n||sym,
+          regularMarketPrice:price,
+          regularMarketChange:chg,
+          regularMarketChangePercent:prev>0?chg/prev*100:0,
+          regularMarketPreviousClose:prev,
+          regularMarketOpen:parseFloat(s.o)||price,
+          regularMarketDayHigh:parseFloat(s.h)||price,
+          regularMarketDayLow:parseFloat(s.l)||price,
+          regularMarketVolume:parseInt(s.v)||0,
+          // Real 5-level orderbook from TWSE
+          twseAsks:askPrices.slice(0,5).map((p,i)=>({p:p.toFixed(2),q:askQtys[i]||0})),
+          twseBids:bidPrices.slice(0,5).map((p,i)=>({p:p.toFixed(2),q:bidQtys[i]||0})),
+          isTWSE:true
+        };
+      });
+      console.log('TWSE: got',Object.keys(result).length,'stocks');
+      return result;
+    }catch(e){
+      console.warn('TWSE proxy failed:',e.message);
+    }
+  }
+  return {};
+}
+
 // ── GROQ API (免費) ──
 async function callGroq(prompt){
   const key=GROQ_KEY_DEFAULT;
